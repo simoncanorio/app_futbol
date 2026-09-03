@@ -1,0 +1,47 @@
+.ticker-wrapper {
+  background-color: #1a1a1a;
+  border-bottom: 1px solid #333;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: #aaa;
+  position: sticky;
+  top: 48px; /* Below Navbar */
+  z-index: 9;
+}
+
+.ticker-scroll {
+  display: flex;
+  gap: 20px;
+  padding: 0 16px;
+  animation: scroll-left 60s linear infinite;
+}
+
+.ticker-scroll:hover {
+  animation-play-state: paused;
+}
+
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-right: 1px solid #333;
+}
+
+.ticker-item .winner {
+  color: #fff;
+  font-weight: 600;
+}
+
+.ticker-sep {
+  color: #555;
+}
+
+@keyframes scroll-left {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}

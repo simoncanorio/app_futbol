@@ -1,0 +1,140 @@
+.new-league-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+  color: #ddd;
+}
+
+.nl-header {
+  border-bottom: 1px solid #444;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+}
+
+.nl-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+.nl-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.nl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.bb-input, .bb-select {
+  background-color: #222;
+  border: 1px solid #444;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.bb-input:focus, .bb-select:focus {
+  outline: none;
+  border-color: #e67e22;
+}
+
+.select-row {
+  display: flex;
+  gap: 10px;
+}
+
+.select-row select {
+  flex: 1;
+}
+
+.random-btn {
+  background-color: #333;
+  color: #fff;
+  border: 1px solid #444;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.random-btn:hover {
+  background-color: #444;
+}
+
+.form-help {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #999;
+  line-height: 1.4;
+}
+
+.nl-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.create-btn {
+  background-color: #d35400; /* BBGM Orange */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.create-btn:hover {
+  background-color: #e67e22;
+}
+
+.settings-btn {
+  background-color: #7f8c8d;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.nl-info {
+  background-color: #2b2b2b;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.info-box h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.info-box p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #ccc;
+  line-height: 1.5;
+}

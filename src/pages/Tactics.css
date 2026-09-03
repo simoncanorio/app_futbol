@@ -1,0 +1,150 @@
+.tactics-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tactics-layout {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  margin-top: 20px;
+}
+
+.tactics-pitch-container {
+  flex: 1;
+  background-color: #2a2a4a;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.football-pitch {
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 2/3;
+  background-color: #4ade80; /* Pitch green */
+  border: 2px solid #fff;
+  border-radius: 4px;
+  position: relative;
+  background-image: 
+    linear-gradient(to bottom, rgba(255,255,255,0.2) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255,255,255,0.2) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+.football-pitch::before {
+  /* Halfway line */
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #fff;
+}
+
+.football-pitch::after {
+  /* Center circle */
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pitch-slot {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+  border: 2px dashed rgba(255,255,255,0.5);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.slot-label {
+  position: absolute;
+  top: -20px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  background-color: rgba(0,0,0,0.5);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.player-token {
+  width: 50px;
+  height: 50px;
+  background-color: #1a1a2e;
+  border: 2px solid #ccc;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: grab;
+  user-select: none;
+}
+
+.player-token:active {
+  cursor: grabbing;
+}
+
+.token-ovr {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.token-name {
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 90%;
+  text-align: center;
+}
+
+.tactics-squad-container {
+  width: 350px;
+  background-color: rgba(30, 30, 50, 0.5);
+  border-radius: 8px;
+  padding: 20px;
+  overflow-y: auto;
+  border: 2px dashed transparent;
+}
+
+.squad-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.drag-hint {
+  font-size: 12px;
+  color: #888;
+}
+
+.draggable-row {
+  cursor: grab;
+}
+
+.draggable-row:active {
+  cursor: grabbing;
+}
+
+.squad-table td {
+  padding: 8px;
+}

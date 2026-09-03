@@ -1,0 +1,169 @@
+.top-navbar {
+  height: 48px;
+  background-color: #222222;
+  border-bottom: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  color: #ddd;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+}
+
+.navbar-left, .navbar-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.nav-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  height: 100%;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #333;
+}
+.nav-toggle-btn:hover {
+  background-color: #333;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  height: 100%;
+  border-right: 1px solid #333;
+}
+
+.logo:hover {
+  background-color: #333;
+}
+
+.play-menu {
+  display: flex;
+  align-items: center;
+  position: relative;
+  height: 100%;
+}
+
+.play-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  height: 100%;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.play-btn:hover {
+  background-color: #218838;
+}
+
+.status-text {
+  padding: 0 16px;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  background-color: #333;
+  border: 1px solid #444;
+  min-width: 150px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-menu button {
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 10px 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dropdown-menu button:hover {
+  background-color: #444;
+}
+
+.home-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.home-icon:hover {
+  background-color: #333;
+}
+
+.nav-dropdown {
+  height: 100%;
+  position: relative;
+}
+
+.nav-link {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.nav-link:hover, .nav-dropdown:hover .nav-link {
+  background-color: #333;
+  color: #fff;
+}
+
+.nav-dropdown-content {
+  display: none;
+  position: absolute;
+  top: 48px;
+  left: 0;
+  background-color: #2b2b2b;
+  min-width: 200px;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.5);
+  border: 1px solid #444;
+  flex-direction: column;
+}
+
+.nav-dropdown:hover .nav-dropdown-content {
+  display: flex;
+}
+
+.nav-dropdown-content a {
+  color: #ddd;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.nav-dropdown-content a:hover {
+  background-color: #3b82f6; /* Blue hover like some generic links or just #444 */
+  color: #fff;
+}
