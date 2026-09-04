@@ -1,81 +1,247 @@
 import { db, type Team, type Match, type Player } from '../db/db';
 
+// Helper to get a random item from array
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// Helper to get a random player, weighted by position (simple implementation)
+function pickWeighted(players: Player[], positions: string[]): Player | null {
+  const filtered = players.filter(p => positions.includes(p.position));
+  if (filtered.length > 0) return pickRandom(filtered);
+  return pickRandom(players) || null;
+}
+
 export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: Team, week: number, type: 'league' | 'cup'): Promise<Match> {
-  const homeAdvantage = 3;
-  const homeChance = homeTeam.overall + homeAdvantage;
-  const awayChance = awayTeam.overall;
-  
-  const total = homeChance + awayChance;
-  
   let homeScore = 0;
   let awayScore = 0;
-  
   const events: any[] = [];
   
-  // Load players for both teams
   const homePlayers = await db.players.where('teamId').equals(homeTeam.id!).toArray();
   const awayPlayers = await db.players.where('teamId').equals(awayTeam.id!).toArray();
   
-  // Basic lineup selection (just grab top 11) for stat tracking
-  const homeLineup = homePlayers.sort((a,b) => b.overall - a.overall).slice(0, 11);
-  const awayLineup = awayPlayers.sort((a,b) => b.overall - a.overall).slice(0, 11);
-  
-  // Track games played
-  for (const p of [...homeLineup, ...awayLineup]) {
-    p.stats.gamesPlayed = (p.stats.gamesPlayed || 0) + 1;
-  }
-  
-  const pickRandomPlayer = (players: Player[]) => {
-    if(players.length === 0) return null;
-    return players[Math.floor(Math.random() * players.length)];
-  };
-
-  const processGoal = (teamId: number, scoringTeamPlayers: Player[], minute: number) => {
-    const scorer = pickRandomPlayer(scoringTeamPlayers.filter(p => p.position === 'DEL' || p.position === 'MED')) || pickRandomPlayer(scoringTeamPlayers);
-    const assister = Math.random() > 0.3 ? pickRandomPlayer(scoringTeamPlayers.filter(p => p.id !== scorer?.id)) : null;
+  // Very simple lineup: 1 POR, 4 DEF, 4 MED, 2 DEL
+  const getLineup = (players: Player[]) => {
+    const por = players.filter(p => p.position === 'POR').sort((a,b)=>b.overall-a.overall).slice(0, 1);
+    const def = players.filter(p => p.position === 'DEF').sort((a,b)=>b.overall-a.overall).slice(0, 4);
+    const med = players.filter(p => p.position === 'MED').sort((a,b)=>b.overall-a.overall).slice(0, 4);
+    const del = players.filter(p => p.position === 'DEL').sort((a,b)=>b.overall-a.overall).slice(0, 2);
+    let lineup = [...por, ...def, ...med, ...del];
     
-    if (scorer) {
-      scorer.stats.goals = (scorer.stats.goals || 0) + 1;
-      events.push({ type: 'goal', playerId: scorer.id!, teamId, assistId: assister?.id, minute });
+    // Fill if missing
+    if(lineup.length < 11) {
+      const rest = players.filter(p => !lineup.find(l => l.id === p.id)).sort((a,b)=>b.overall-a.overall);
+      lineup = [...lineup, ...rest.slice(0, 11 - lineup.length)];
     }
-    if (assister) {
-      assister.stats.assists = (assister.stats.assists || 0) + 1;
-    }
+    return lineup;
+  };
+  
+  const homeLineup = getLineup(homePlayers);
+  const awayLineup = getLineup(awayPlayers);
+  
+  for (const p of [...homeLineup, ...awayLineup]) {
+    p.stats.gamesPlayed++;
+    p.stats.minutesPlayed += 90; // simplified
+  }
+
+  const state = {
+    possessionTeam: Math.random() > 0.5 ? homeTeam : awayTeam,
+    zone: 'mid', // 'own', 'mid', 'opp', 'box'
   };
 
-  for(let i = 0; i < 90; i += 10) {
-     const roll = Math.random() * total;
-     if(roll < homeChance * 0.05) {
-       homeScore++;
-       processGoal(homeTeam.id!, homeLineup, i + Math.floor(Math.random()*9));
-     } else if(roll > total - (awayChance * 0.05)) {
-       awayScore++;
-       processGoal(awayTeam.id!, awayLineup, i + Math.floor(Math.random()*9));
-     }
-     
-     // Random cards
-     if (Math.random() < 0.1) {
-        const teamId = Math.random() > 0.5 ? homeTeam.id! : awayTeam.id!;
-        const players = teamId === homeTeam.id ? homeLineup : awayLineup;
-        const player = pickRandomPlayer(players);
-        if (player) {
-          player.stats.yellowCards = (player.stats.yellowCards || 0) + 1;
-          events.push({ type: 'yellow_card', playerId: player.id!, teamId, minute: i });
+  const getOpponent = (team: Team) => team.id === homeTeam.id ? awayTeam : homeTeam;
+  const getLineupByTeam = (team: Team) => team.id === homeTeam.id ? homeLineup : awayLineup;
+
+  for (let minute = 1; minute <= 90; minute++) {
+    const attackingTeam = state.possessionTeam;
+    const defendingTeam = getOpponent(attackingTeam);
+    const atkLineup = getLineupByTeam(attackingTeam);
+    const defLineup = getLineupByTeam(defendingTeam);
+
+    const atkPlayer = pickRandom(atkLineup.filter(p => p.position !== 'POR')) || atkLineup[0];
+    const defPlayer = pickRandom(defLineup.filter(p => p.position !== 'POR')) || defLineup[0];
+
+    const atkAtts = atkPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+    const defAtts = defPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+
+    // Action choice
+    if (state.zone === 'own' || state.zone === 'mid') {
+      // Pass or Dribble
+      atkPlayer.stats.touches++;
+      if (Math.random() > 0.2) { // Pass
+        atkPlayer.stats.passesAttempted++;
+        if (state.zone === 'own') atkPlayer.stats.ownHalfPassesAttempted++;
+        else atkPlayer.stats.oppHalfPassesAttempted++;
+        
+        // Pass success depends on passing vs opponent interception
+        const passRoll = Math.random() * 100 + (atkAtts.passing * 0.5);
+        const defRoll = Math.random() * 100 + (defAtts.defending * 0.3);
+        
+        if (passRoll > defRoll) {
+          atkPlayer.stats.passesCompleted++;
+          if (state.zone === 'own') {
+            atkPlayer.stats.ownHalfPassesCompleted++;
+            state.zone = 'mid';
+          } else {
+            atkPlayer.stats.oppHalfPassesCompleted++;
+            state.zone = 'opp';
+          }
+        } else {
+          // Intercepted
+          atkPlayer.stats.possessionLost++;
+          defPlayer.stats.interceptions++;
+          defPlayer.stats.ballsRecovered++;
+          state.possessionTeam = defendingTeam;
         }
-     }
+      } else { // Dribble / Duel
+        atkPlayer.stats.dribblesAttempted++;
+        const duelRoll = Math.random() * 100 + (atkAtts.dribbling * 0.5 + atkAtts.pace * 0.5);
+        const tackleRoll = Math.random() * 100 + (defAtts.defending * 0.5 + defAtts.physical * 0.5);
+        
+        if (duelRoll > tackleRoll) {
+          atkPlayer.stats.dribblesCompleted++;
+          atkPlayer.stats.duelsWon++;
+          atkPlayer.stats.groundDuelsWon++;
+          defPlayer.stats.duelsLost++;
+          defPlayer.stats.groundDuelsLost++;
+          defPlayer.stats.dribbledPast++;
+          state.zone = state.zone === 'own' ? 'mid' : 'opp';
+        } else {
+          atkPlayer.stats.possessionLost++;
+          atkPlayer.stats.duelsLost++;
+          atkPlayer.stats.groundDuelsLost++;
+          defPlayer.stats.tackles++;
+          defPlayer.stats.duelsWon++;
+          defPlayer.stats.groundDuelsWon++;
+          defPlayer.stats.ballsRecovered++;
+          
+          // Foul check
+          if (Math.random() < 0.2) {
+             defPlayer.stats.foulsCommitted++;
+             atkPlayer.stats.foulsReceived++;
+             state.possessionTeam = attackingTeam; // free kick
+             if (Math.random() < 0.1) {
+                defPlayer.stats.yellowCards++;
+                events.push({ type: 'yellow_card', playerId: defPlayer.id!, teamId: defendingTeam.id!, minute });
+             }
+          } else {
+             state.possessionTeam = defendingTeam;
+          }
+        }
+      }
+    } else if (state.zone === 'opp' || state.zone === 'box') {
+      atkPlayer.stats.touches++;
+      // Create chance or shoot
+      if (Math.random() > 0.4 && state.zone === 'opp') {
+         // Cross or Through Ball (Key Pass)
+         const isCross = Math.random() > 0.5;
+         if (isCross) atkPlayer.stats.crossesAttempted++;
+         
+         const passRoll = Math.random() * 100 + (atkAtts.passing * 0.6);
+         const defRoll = Math.random() * 100 + (defAtts.defending * 0.4);
+         
+         if (passRoll > defRoll) {
+            if (isCross) atkPlayer.stats.crossesCompleted++;
+            atkPlayer.stats.keyPasses++;
+            atkPlayer.stats.xA += 0.15;
+            state.zone = 'box';
+            
+            // Receiver shoots
+            const receiver = pickWeighted(atkLineup, ['DEL', 'MED']) || atkPlayer;
+            const xG = 0.2 + (Math.random() * 0.3); // big chance
+            receiver.stats.shotsTotal++;
+            receiver.stats.xG += xG;
+            if (xG > 0.3) {
+              atkPlayer.stats.bigChancesCreated++;
+            }
+            
+            const gk = defLineup.find(p => p.position === 'POR') || defLineup[0];
+            const gkAtts = gk.attributes || defAtts;
+            const shootRoll = Math.random() * 100 + ((receiver.attributes?.shooting||50) * 0.6);
+            const saveRoll = Math.random() * 100 + (gkAtts.defending * 0.6);
+            
+            if (shootRoll > saveRoll) { // Shot on target
+               receiver.stats.shotsOnTarget++;
+               if (shootRoll > saveRoll + 20) { // Goal
+                  receiver.stats.goals++;
+                  receiver.stats.goalsInsideBox++;
+                  if (isCross) receiver.stats.headerGoals++;
+                  atkPlayer.stats.assists++;
+                  if (attackingTeam.id === homeTeam.id) homeScore++; else awayScore++;
+                  events.push({ type: 'goal', playerId: receiver.id!, teamId: attackingTeam.id!, assistId: atkPlayer.id, minute });
+                  state.zone = 'mid';
+                  state.possessionTeam = defendingTeam;
+               } else {
+                  // Saved
+                  state.possessionTeam = defendingTeam;
+                  state.zone = 'own';
+                  if (xG > 0.3) receiver.stats.bigChancesMissed++;
+               }
+            } else {
+               // Missed completely or blocked
+               if (Math.random() > 0.5) {
+                 defPlayer.stats.shotsBlocked++;
+               }
+               state.possessionTeam = defendingTeam;
+               state.zone = 'own';
+               if (xG > 0.3) receiver.stats.bigChancesMissed++;
+            }
+         } else {
+            // Cleared or intercepted
+            atkPlayer.stats.possessionLost++;
+            defPlayer.stats.clearances++;
+            state.possessionTeam = defendingTeam;
+            state.zone = 'own';
+         }
+      } else {
+         // Shoot directly
+         const xG = state.zone === 'box' ? 0.15 : 0.05;
+         atkPlayer.stats.shotsTotal++;
+         atkPlayer.stats.xG += xG;
+         
+         const gk = defLineup.find(p => p.position === 'POR') || defLineup[0];
+         const gkAtts = gk.attributes || defAtts;
+         const shootRoll = Math.random() * 100 + (atkAtts.shooting * 0.6);
+         const saveRoll = Math.random() * 100 + (gkAtts.defending * 0.6);
+         
+         if (shootRoll > saveRoll) {
+            atkPlayer.stats.shotsOnTarget++;
+            if (shootRoll > saveRoll + 25) { // Goal
+               atkPlayer.stats.goals++;
+               if (state.zone === 'box') atkPlayer.stats.goalsInsideBox++;
+               else atkPlayer.stats.goalsOutsideBox++;
+               if (attackingTeam.id === homeTeam.id) homeScore++; else awayScore++;
+               events.push({ type: 'goal', playerId: atkPlayer.id!, teamId: attackingTeam.id!, minute });
+               state.zone = 'mid';
+               state.possessionTeam = defendingTeam;
+            } else {
+               state.possessionTeam = defendingTeam;
+               state.zone = 'own';
+            }
+         } else {
+            state.possessionTeam = defendingTeam;
+            state.zone = 'own';
+         }
+      }
+    }
   }
-  
-  // Track clean sheets
+
+  // Final updates (clean sheets)
   if (awayScore === 0) {
     const homeGk = homeLineup.find(p => p.position === 'POR');
-    if (homeGk) homeGk.stats.cleanSheets = (homeGk.stats.cleanSheets || 0) + 1;
+    if (homeGk) homeGk.stats.cleanSheets++;
   }
   if (homeScore === 0) {
     const awayGk = awayLineup.find(p => p.position === 'POR');
-    if (awayGk) awayGk.stats.cleanSheets = (awayGk.stats.cleanSheets || 0) + 1;
+    if (awayGk) awayGk.stats.cleanSheets++;
   }
-  
-  // Save updated players
+
+  // Cap stats properly
+  [...homeLineup, ...awayLineup].forEach(p => {
+    p.stats.xA = parseFloat(p.stats.xA.toFixed(2));
+    p.stats.xG = parseFloat(p.stats.xG.toFixed(2));
+  });
+
   await db.players.bulkPut([...homeLineup, ...awayLineup]);
 
   return {

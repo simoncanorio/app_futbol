@@ -1,4 +1,4 @@
-import { db } from '../db/db';
+import { db, getInitialPlayerStats } from '../db/db';
 import { simulateMatch } from './matchEngine';
 
 export async function getLeagueMaxWeeks(leagueId: number) {
@@ -132,16 +132,15 @@ async function endSeason(leagueId: number, currentSeason: number, allTeams: any[
   }
   await db.teams.bulkPut(allTeams);
 
-  // 2. Resetear estadísticas estacionales de jugadores
+  // 2. Resetear estadísticas estacionales de jugadores y guardar en historial
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
     if (p.stats) {
-      p.stats.goals = 0;
-      p.stats.assists = 0;
-      p.stats.gamesPlayed = 0;
-      p.stats.yellowCards = 0;
-      p.stats.redCards = 0;
-      p.stats.cleanSheets = 0;
+      if (!p.historicalStats) p.historicalStats = {};
+      p.historicalStats[currentSeason] = { ...p.stats };
+      
+      // Reset stats
+      p.stats = getInitialPlayerStats();
     }
     // Opcional: Progresión de edad y potencial aquí
     p.age += 1;

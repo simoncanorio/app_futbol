@@ -102,43 +102,94 @@ export function PlayerProfile() {
       </div>
 
       {/* STATS SECTION */}
-      <h3 style={{ borderBottom: '1px solid #333', paddingBottom: '0.5rem', color: '#3b82f6' }}>Estadísticas Totales</h3>
+      <h3 style={{ borderBottom: '1px solid #333', paddingBottom: '0.5rem', color: '#3b82f6', display: 'flex', justifyContent: 'space-between' }}>
+        <span>Estadísticas de Temporada</span>
+      </h3>
       <div className="standings-content" style={{ overflowX: 'auto' }}>
-        <table className="table-container bb-table">
+        <table className="table-container bb-table" style={{minWidth: '1000px'}}>
           <thead>
             <tr>
               <th>Temporada</th>
               <th>Equipo</th>
-              <th>Edad</th>
-              <th>GP</th>
+              <th>PJ</th>
               <th>Gls</th>
+              <th>xG</th>
               <th>Ast</th>
-              <th>YC</th>
-              <th>RC</th>
-              <th>CS</th>
+              <th>xA</th>
+              <th>Tir</th>
+              <th>Pases%</th>
+              <th>Reg</th>
+              <th>Duel</th>
+              <th>TA</th>
+              <th>TR</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
+            {Object.entries(player.historicalStats || {}).map(([s, stats]) => {
+               const passPct = stats.passesAttempted > 0 ? Math.round((stats.passesCompleted / stats.passesAttempted)*100) : 0;
+               return (
+                <tr key={`hist-${s}`}>
+                  <td style={{color: '#888'}}>{s}</td>
+                  <td style={{color: '#888'}}>-</td>
+                  <td>{stats.gamesPlayed}</td>
+                  <td style={{ fontWeight: 'bold' }}>{stats.goals}</td>
+                  <td style={{color: '#888'}}>{stats.xG.toFixed(2)}</td>
+                  <td>{stats.assists}</td>
+                  <td style={{color: '#888'}}>{stats.xA.toFixed(2)}</td>
+                  <td>{stats.shotsTotal}</td>
+                  <td>{stats.passesCompleted}/{stats.passesAttempted} ({passPct}%)</td>
+                  <td>{stats.dribblesCompleted}</td>
+                  <td>{stats.duelsWon}</td>
+                  <td>{stats.yellowCards}</td>
+                  <td>{stats.redCards}</td>
+                </tr>
+               )
+            })}
+            
+            {/* CURRENT SEASON */}
+            <tr style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
               <td>{league?.season}</td>
               <td>{team ? <Link to={`/l/${leagueId}/team/${team.id}`} style={{color: '#3b82f6', textDecoration: 'none'}}>{team.name.substring(0,3).toUpperCase()}</Link> : 'FA'}</td>
-              <td>{player.age}</td>
               <td>{player.stats?.gamesPlayed || 0}</td>
               <td style={{ fontWeight: 'bold' }}>{player.stats?.goals || 0}</td>
+              <td style={{color: '#888'}}>{player.stats?.xG?.toFixed(2) || '0.00'}</td>
               <td>{player.stats?.assists || 0}</td>
+              <td style={{color: '#888'}}>{player.stats?.xA?.toFixed(2) || '0.00'}</td>
+              <td>{player.stats?.shotsTotal || 0}</td>
+              <td>{player.stats?.passesCompleted || 0}/{player.stats?.passesAttempted || 0}</td>
+              <td>{player.stats?.dribblesCompleted || 0}</td>
+              <td>{player.stats?.duelsWon || 0}</td>
               <td>{player.stats?.yellowCards || 0}</td>
               <td>{player.stats?.redCards || 0}</td>
-              <td>{player.position === 'POR' ? (player.stats?.cleanSheets || 0) : '-'}</td>
             </tr>
-            <tr style={{ fontWeight: 'bold', background: 'rgba(255,255,255,0.05)' }}>
-              <td colSpan={3}>Carrera</td>
-              <td>{player.stats?.gamesPlayed || 0}</td>
-              <td style={{ color: '#e67e22' }}>{player.stats?.goals || 0}</td>
-              <td>{player.stats?.assists || 0}</td>
-              <td>{player.stats?.yellowCards || 0}</td>
-              <td>{player.stats?.redCards || 0}</td>
-              <td>{player.position === 'POR' ? (player.stats?.cleanSheets || 0) : '-'}</td>
-            </tr>
+            
+            {/* CAREER TOTAL */}
+            {(() => {
+               let cGP = player.stats?.gamesPlayed || 0;
+               let cGls = player.stats?.goals || 0;
+               let cxG = player.stats?.xG || 0;
+               let cAst = player.stats?.assists || 0;
+               let cxA = player.stats?.xA || 0;
+               let cSht = player.stats?.shotsTotal || 0;
+               
+               Object.values(player.historicalStats || {}).forEach(hs => {
+                 cGP += hs.gamesPlayed; cGls += hs.goals; cxG += hs.xG;
+                 cAst += hs.assists; cxA += hs.xA; cSht += hs.shotsTotal;
+               });
+               
+               return (
+                <tr style={{ fontWeight: 'bold', background: 'rgba(255,255,255,0.05)' }}>
+                  <td colSpan={2}>Carrera Total</td>
+                  <td>{cGP}</td>
+                  <td style={{ color: '#e67e22' }}>{cGls}</td>
+                  <td style={{color: '#888'}}>{cxG.toFixed(2)}</td>
+                  <td>{cAst}</td>
+                  <td style={{color: '#888'}}>{cxA.toFixed(2)}</td>
+                  <td>{cSht}</td>
+                  <td colSpan={5}></td>
+                </tr>
+               );
+            })()}
           </tbody>
         </table>
       </div>

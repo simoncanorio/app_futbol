@@ -11,6 +11,97 @@ export interface League {
   userTeamId: number | null; 
 }
 
+export interface AdvancedPlayerStats {
+  gamesPlayed: number;
+  minutesPlayed: number;
+
+  // Ataque
+  goals: number;
+  xG: number;
+  shotsTotal: number;
+  shotsOnTarget: number;
+  bigChancesMissed: number;
+  penaltiesScored: number;
+  penaltiesAttempted: number;
+  freeKickGoals: number;
+  freeKickAttempts: number;
+  goalsInsideBox: number;
+  goalsOutsideBox: number;
+  headerGoals: number;
+  leftFootGoals: number;
+  rightFootGoals: number;
+  penaltiesWon: number;
+
+  // Pases
+  assists: number;
+  xA: number;
+  touches: number;
+  bigChancesCreated: number;
+  keyPasses: number;
+  passesAttempted: number;
+  passesCompleted: number;
+  ownHalfPassesAttempted: number;
+  ownHalfPassesCompleted: number;
+  oppHalfPassesAttempted: number;
+  oppHalfPassesCompleted: number;
+  longBallsAttempted: number;
+  longBallsCompleted: number;
+  chippedPassesAttempted: number;
+  chippedPassesCompleted: number;
+  crossesAttempted: number;
+  crossesCompleted: number;
+
+  // Defensa
+  cleanSheets: number;
+  interceptions: number;
+  tackles: number;
+  possessionWonFinalThird: number;
+  ballsRecovered: number;
+  dribbledPast: number;
+  clearances: number;
+  shotsBlocked: number;
+  errorsLeadingToShot: number;
+  errorsLeadingToGoal: number;
+  penaltiesConceded: number;
+
+  // Otros
+  dribblesAttempted: number;
+  dribblesCompleted: number;
+  duelsWon: number;
+  duelsLost: number;
+  groundDuelsWon: number;
+  groundDuelsLost: number;
+  aerialDuelsWon: number;
+  aerialDuelsLost: number;
+  possessionLost: number;
+  foulsCommitted: number;
+  foulsReceived: number;
+  offsides: number;
+
+  // Tarjetas
+  yellowCards: number;
+  secondYellowCards: number;
+  redCards: number;
+}
+
+export function getInitialPlayerStats(): AdvancedPlayerStats {
+  return {
+    gamesPlayed: 0, minutesPlayed: 0,
+    goals: 0, xG: 0, shotsTotal: 0, shotsOnTarget: 0, bigChancesMissed: 0,
+    penaltiesScored: 0, penaltiesAttempted: 0, freeKickGoals: 0, freeKickAttempts: 0,
+    goalsInsideBox: 0, goalsOutsideBox: 0, headerGoals: 0, leftFootGoals: 0, rightFootGoals: 0, penaltiesWon: 0,
+    assists: 0, xA: 0, touches: 0, bigChancesCreated: 0, keyPasses: 0,
+    passesAttempted: 0, passesCompleted: 0, ownHalfPassesAttempted: 0, ownHalfPassesCompleted: 0,
+    oppHalfPassesAttempted: 0, oppHalfPassesCompleted: 0, longBallsAttempted: 0, longBallsCompleted: 0,
+    chippedPassesAttempted: 0, chippedPassesCompleted: 0, crossesAttempted: 0, crossesCompleted: 0,
+    cleanSheets: 0, interceptions: 0, tackles: 0, possessionWonFinalThird: 0, ballsRecovered: 0,
+    dribbledPast: 0, clearances: 0, shotsBlocked: 0, errorsLeadingToShot: 0, errorsLeadingToGoal: 0, penaltiesConceded: 0,
+    dribblesAttempted: 0, dribblesCompleted: 0, duelsWon: 0, duelsLost: 0, groundDuelsWon: 0, groundDuelsLost: 0,
+    aerialDuelsWon: 0, aerialDuelsLost: 0, possessionLost: 0, foulsCommitted: 0, foulsReceived: 0, offsides: 0,
+    yellowCards: 0, secondYellowCards: 0, redCards: 0
+  };
+}
+
 export interface Player {
   id?: number;
   leagueId: number;
@@ -21,14 +112,9 @@ export interface Player {
   potential: number;
   position: 'POR' | 'DEF' | 'MED' | 'DEL';
   contract: number;
-  stats: { 
-    goals: number; 
-    assists: number; 
-    gamesPlayed?: number; 
-    yellowCards?: number; 
-    redCards?: number; 
-    cleanSheets?: number;
-  };
+  stats: AdvancedPlayerStats;
+  historicalStats?: Record<number, AdvancedPlayerStats>; // season -> stats
+
   attributes?: {
     pace: number;
     shooting: number;

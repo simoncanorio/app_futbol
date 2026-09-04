@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db, type League, type Player, type Team, getInitialPlayerStats } from './db';
 
 const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge', 'Jose', 'Diego', 'Mateo', 'Lucas', 'Martin', 'Leo', 'Hugo', 'Daniel'];
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
@@ -85,7 +85,7 @@ export async function createNewLeague(name: string, difficulty: 'Normal' | 'Hard
         potential,
         position: positions[i] as any,
         contract: randomInt(500, 5000) * 1000,
-        stats: { goals: 0, assists: 0, gamesPlayed: 0, yellowCards: 0, redCards: 0, cleanSheets: 0 },
+        stats: getInitialPlayerStats(),
         attributes: {
           pace: randomInt(40, 99),
           shooting: randomInt(30, 99),
