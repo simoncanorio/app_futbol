@@ -152,6 +152,11 @@
   flex-direction: column;
 }
 
+.nav-dropdown-content.right-align {
+  left: auto;
+  right: 0;
+}
+
 .nav-dropdown:hover .nav-dropdown-content {
   display: flex;
 }
@@ -166,4 +171,17 @@
 .nav-dropdown-content a:hover {
   background-color: #3b82f6; /* Blue hover like some generic links or just #444 */
   color: #fff;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
 }

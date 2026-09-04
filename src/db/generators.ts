@@ -2,6 +2,7 @@ import { db } from './db';
 
 const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge', 'Jose', 'Diego', 'Mateo', 'Lucas', 'Martin', 'Leo', 'Hugo', 'Daniel'];
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
+const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'Alemania', 'Italia', 'Portugal', 'Uruguay', 'Colombia'];
 
 export const espTeams = ['Madrid FC', 'Catalunya', 'Atletico', 'Valencia', 'Sevilla FC', 'Bilbao', 'Betis', 'Villarreal', 'Sociedad', 'Celta'];
 export const engTeams = ['London United', 'London City', 'Manchester Red', 'Manchester Blue', 'Liverpool FC', 'North London', 'Newcastle', 'Aston', 'Everton', 'West Ham'];
@@ -19,6 +20,7 @@ export async function createNewLeague(name: string, difficulty: 'Normal' | 'Hard
   const leagueId = await db.leagues.add({
     name,
     season: 2026,
+    currentWeek: 1,
     difficulty,
     createdAt: Date.now(),
     lastPlayedAt: Date.now(),
@@ -83,7 +85,20 @@ export async function createNewLeague(name: string, difficulty: 'Normal' | 'Hard
         potential,
         position: positions[i] as any,
         contract: randomInt(500, 5000) * 1000,
-        stats: { goals: 0, assists: 0 }
+        stats: { goals: 0, assists: 0, gamesPlayed: 0, yellowCards: 0, redCards: 0, cleanSheets: 0 },
+        attributes: {
+          pace: randomInt(40, 99),
+          shooting: randomInt(30, 99),
+          passing: randomInt(40, 99),
+          dribbling: randomInt(40, 99),
+          defending: randomInt(20, 99),
+          physical: randomInt(50, 99)
+        },
+        bio: {
+          height: randomInt(165, 198),
+          weight: randomInt(60, 95),
+          country: countries[Math.floor(Math.random() * countries.length)]
+        }
       });
     }
     

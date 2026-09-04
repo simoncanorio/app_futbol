@@ -1,7 +1,7 @@
 .sidebar {
   width: 250px;
-  background-color: #2b303a;
-  border-right: 1px solid #1e2229;
+  background-color: #222;
+  border-right: 1px solid #333;
   height: calc(100vh - 48px);
   position: sticky;
   top: 48px;
@@ -63,6 +63,6 @@
 }
 
 .nav-item:hover {
-  background-color: #3b4252;
+  background-color: #333;
   text-decoration: none;
 }

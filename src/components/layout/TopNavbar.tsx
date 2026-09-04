@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Play, ChevronDown, Home, Menu } from 'lucide-react';
-import { advanceWeek } from '../../engine/gameLoop';
+import { Play, ChevronDown, Home, Menu, Loader } from 'lucide-react';
+import { advanceWeek, getLeagueMaxWeeks } from '../../engine/gameLoop';
+import { db, type League } from '../../db/db';
 import './TopNavbar.css';
 
 interface TopNavbarProps {
@@ -11,17 +12,53 @@ interface TopNavbarProps {
   onToggleSidebar?: () => void;
 }
 
-export function TopNavbar({ leagueId, season, onRefresh, onToggleSidebar }: TopNavbarProps) {
+export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarProps) {
   const navigate = useNavigate();
   const [playOpen, setPlayOpen] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [league, setLeague] = useState<League | null>(null);
+  const [maxWeeks, setMaxWeeks] = useState<number>(0);
 
-  const handleAdvance = async (weeks: number) => {
-    if (!leagueId) return;
-    setPlayOpen(false);
-    for(let i=0; i<weeks; i++){
-      await advanceWeek(leagueId);
+  React.useEffect(() => {
+    if (leagueId) {
+      db.leagues.get(leagueId).then(l => setLeague(l || null));
+      getLeagueMaxWeeks(leagueId).then(w => setMaxWeeks(w));
     }
-    if (onRefresh) onRefresh();
+  }, [leagueId]);
+
+  const handleAdvance = async (weeks: number | string) => {
+    if (!leagueId || !league) return;
+    setPlayOpen(false);
+    setIsSimulating(true);
+    try {
+      let weeksToAdvance = 0;
+      if (typeof weeks === 'number') {
+        weeksToAdvance = weeks;
+      } else if (weeks === 'end_season') {
+        const mw = await getLeagueMaxWeeks(leagueId);
+        weeksToAdvance = Math.max(0, mw - league.currentWeek);
+      } else if (weeks === 'start_cup') {
+        const mw = await getLeagueMaxWeeks(leagueId);
+        const cupStart = Math.floor(mw / 2);
+        weeksToAdvance = Math.max(0, cupStart - league.currentWeek);
+        if (weeksToAdvance <= 0) weeksToAdvance = 1;
+      } else if (weeks === 'next_season') {
+        weeksToAdvance = 1; // It will just trigger endSeason
+      }
+
+      for(let i=0; i<weeksToAdvance; i++){
+        await advanceWeek(leagueId);
+      }
+      
+      if (weeks === 'next_season') {
+        navigate(`/l/${leagueId}/season_summary`);
+      } else {
+        if (onRefresh) onRefresh();
+        window.location.reload();
+      }
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   return (
@@ -38,17 +75,28 @@ export function TopNavbar({ leagueId, season, onRefresh, onToggleSidebar }: TopN
         
         {leagueId && (
           <div className="play-menu">
-            <button className="play-btn" onClick={() => setPlayOpen(!playOpen)}>
-              <Play size={16} fill="currentColor" /> Play <ChevronDown size={14} />
+            <button className="play-btn" onClick={() => setPlayOpen(!playOpen)} disabled={isSimulating}>
+              {isSimulating ? (
+                <><Loader size={16} className="spinner" /> Simulando...</>
+              ) : (
+                <><Play size={16} fill="currentColor" /> Play <ChevronDown size={14} /></>
+              )}
             </button>
             {playOpen && (
               <div className="dropdown-menu">
-                <button onClick={() => handleAdvance(1)}>Avanzar 1 Semana</button>
-                <button onClick={() => handleAdvance(4)}>Avanzar 1 Mes</button>
+                {league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? (
+                  <button onClick={() => handleAdvance('next_season')} style={{background: '#10b981', color: 'white'}}>Avanzar a la siguiente temporada</button>
+                ) : (
+                  <>
+                    <button onClick={() => handleAdvance(1)}>Avanzar 1 Semana</button>
+                    <button onClick={() => handleAdvance('start_cup')}>Avanzar hasta Copa</button>
+                    <button onClick={() => handleAdvance('end_season')}>Avanzar hasta Fin de Temporada</button>
+                  </>
+                )}
               </div>
             )}
             <div className="status-text">
-              Temporada {season} - Inactivo
+              Temp {league?.season || 2026} - Jor. {league?.currentWeek || 1}
             </div>
           </div>
         )}
@@ -100,28 +148,26 @@ export function TopNavbar({ leagueId, season, onRefresh, onToggleSidebar }: TopN
           <div className="nav-dropdown">
             <span className="nav-link">Estadísticas <ChevronDown size={14} /></span>
             <div className="nav-dropdown-content">
-              <Link to="#">Registro de Partidos</Link>
-              <Link to="#">Líderes de la Liga</Link>
-              <Link to="#">Valoraciones</Link>
-              <Link to="#">Estadísticas Propias</Link>
-              <Link to="#">Biografías</Link>
-              <Link to="#">Gráficos de Jugadores</Link>
-              <Link to="#">Búsqueda Avanzada</Link>
-              <Link to="#">Estadísticas de Equipo</Link>
-              <Link to="#">Gráficos de Equipo</Link>
-              <Link to="#">Estadísticas de Liga</Link>
-              <Link to="#">Lesiones</Link>
-              <Link to="#">Hitos Estadísticos</Link>
-              <Link to="#">Premios</Link>
+              <Link to={`/l/${leagueId}/game_log`}>Registro de Partidos</Link>
+              <Link to={`/l/${leagueId}/leaders`}>Líderes de Liga</Link>
+              <Link to={`/l/${leagueId}/player_ratings`}>Valoraciones</Link>
+              <Link to={`/l/${leagueId}/player_stats`}>Estadísticas Propias</Link>
+              <Link to={`/l/${leagueId}/player_bios`}>Biografías</Link>
+              <Link to={`/l/${leagueId}/player_graphs`}>Gráficos de Jugadores</Link>
+              <Link to={`/l/${leagueId}/advanced_search`}>Búsqueda Avanzada</Link>
+              <Link to={`/l/${leagueId}/team_stats`}>Estadísticas de Equipo</Link>
+              <Link to={`/l/${leagueId}/team_graphs`}>Gráficos de Equipo</Link>
+              <Link to={`/l/${leagueId}/league_stats`}>Estadísticas de Liga</Link>
+              <Link to={`/l/${leagueId}/awards`}>Premios</Link>
             </div>
           </div>
           <div className="nav-dropdown">
             <span className="nav-link">Sociales <ChevronDown size={14} /></span>
-            <div className="nav-dropdown-content">
-              <Link to="#">Noticias</Link>
-              <Link to="#">Redes Sociales</Link>
-              <Link to="#">Prensa</Link>
-              <Link to="#">Relaciones Institucionales</Link>
+            <div className="nav-dropdown-content right-align">
+              <Link to={`/l/${leagueId}/news`}>Noticias</Link>
+              <Link to={`/l/${leagueId}/social_media`}>Redes Sociales</Link>
+              <Link to={`/l/${leagueId}/press`}>Prensa</Link>
+              <Link to={`/l/${leagueId}/relations`}>Relaciones Institucionales</Link>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ export interface League {
   id?: number;
   name: string;
   season: number;
+  currentWeek: number;
   difficulty: 'Normal' | 'Hard' | 'Insane';
   createdAt: number;
   lastPlayedAt: number;
@@ -20,7 +21,27 @@ export interface Player {
   potential: number;
   position: 'POR' | 'DEF' | 'MED' | 'DEL';
   contract: number;
-  stats: { goals: number; assists: number };
+  stats: { 
+    goals: number; 
+    assists: number; 
+    gamesPlayed?: number; 
+    yellowCards?: number; 
+    redCards?: number; 
+    cleanSheets?: number;
+  };
+  attributes?: {
+    pace: number;
+    shooting: number;
+    passing: number;
+    dribbling: number;
+    defending: number;
+    physical: number;
+  };
+  bio?: {
+    height: number;
+    weight: number;
+    country: string;
+  };
   lineupStatus?: 'starter' | 'bench' | 'reserve' | 'youth';
   pitchPosition?: string;
   isHallOfFame?: boolean;
@@ -64,6 +85,13 @@ export interface Match {
   week: number;
   isPlayed: boolean;
   type: 'league' | 'cup';
+  events?: {
+    type: 'goal' | 'yellow_card' | 'red_card';
+    playerId: number;
+    teamId: number;
+    assistId?: number;
+    minute: number;
+  }[];
 }
 
 export interface SeasonHistory {

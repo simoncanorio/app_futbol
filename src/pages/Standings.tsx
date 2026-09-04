@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Team, type League } from '../db/db';
 import './Standings.css';
 
@@ -80,7 +80,9 @@ export function Standings() {
                 <tr key={t.id} className={rowClass}>
                   <td>
                      {pos} {mark && <span className="pos-mark">{mark}</span>}
-                     <span className="team-name">{t.name}</span>
+                     <Link to={`/l/${leagueId}/team/${t.id}`} className="team-name" style={{color: 'inherit', textDecoration: 'none', fontWeight: 'bold'}}>
+                       {t.name}
+                     </Link>
                   </td>
                   <td>{t.wins}</td>
                   <td>{t.draws}</td>

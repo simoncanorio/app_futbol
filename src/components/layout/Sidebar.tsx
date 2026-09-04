@@ -59,29 +59,27 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <div className="nav-group-title">
             <span style={{fontSize:'8px', marginRight:'4px'}}>▼</span> ESTADÍSTICAS
           </div>
-          <Link to="#" className="nav-item">Registro de Partidos</Link>
-          <Link to="#" className="nav-item">Líderes de la Liga</Link>
-          <Link to="#" className="nav-item">Valoraciones</Link>
-          <Link to="#" className="nav-item">Estadísticas Propias</Link>
-          <Link to="#" className="nav-item">Biografías</Link>
-          <Link to="#" className="nav-item">Gráficos de Jugadores</Link>
-          <Link to="#" className="nav-item">Búsqueda Avanzada</Link>
-          <Link to="#" className="nav-item">Estadísticas de Equipo</Link>
-          <Link to="#" className="nav-item">Gráficos de Equipo</Link>
-          <Link to="#" className="nav-item">Estadísticas de Liga</Link>
-          <Link to="#" className="nav-item">Lesiones</Link>
-          <Link to="#" className="nav-item">Hitos Estadísticos</Link>
-          <Link to="#" className="nav-item">Premios</Link>
+          <Link to={`/l/${leagueId}/game_log`} className="nav-item">Registro de Partidos</Link>
+          <Link to={`/l/${leagueId}/leaders`} className="nav-item">Líderes de Liga</Link>
+          <Link to={`/l/${leagueId}/player_ratings`} className="nav-item">Valoraciones</Link>
+          <Link to={`/l/${leagueId}/player_stats`} className="nav-item">Estadísticas Propias</Link>
+          <Link to={`/l/${leagueId}/player_bios`} className="nav-item">Biografías</Link>
+          <Link to={`/l/${leagueId}/player_graphs`} className="nav-item">Gráficos de Jugadores</Link>
+          <Link to={`/l/${leagueId}/advanced_search`} className="nav-item">Búsqueda Avanzada</Link>
+          <Link to={`/l/${leagueId}/team_stats`} className="nav-item">Estadísticas de Equipo</Link>
+          <Link to={`/l/${leagueId}/team_graphs`} className="nav-item">Gráficos de Equipo</Link>
+          <Link to={`/l/${leagueId}/league_stats`} className="nav-item">Estadísticas de Liga</Link>
+          <Link to={`/l/${leagueId}/awards`} className="nav-item">Premios</Link>
         </div>
         
         <div className="nav-group">
           <div className="nav-group-title">
             <span style={{fontSize:'8px', marginRight:'4px'}}>▼</span> SOCIALES
           </div>
-          <Link to="#" className="nav-item">Noticias</Link>
-          <Link to="#" className="nav-item">Redes Sociales</Link>
-          <Link to="#" className="nav-item">Prensa</Link>
-          <Link to="#" className="nav-item">Relaciones Institucionales</Link>
+          <Link to={`/l/${leagueId}/news`} className="nav-item">Noticias</Link>
+          <Link to={`/l/${leagueId}/social_media`} className="nav-item">Redes Sociales</Link>
+          <Link to={`/l/${leagueId}/press`} className="nav-item">Prensa</Link>
+          <Link to={`/l/${leagueId}/relations`} className="nav-item">Relaciones Institucionales</Link>
         </div>
       </div>
     </div>

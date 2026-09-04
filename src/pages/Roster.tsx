@@ -1,23 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type League } from '../db/db';
 
 export function Roster() {
-  const { leagueId } = useParams();
+  const { leagueId, teamId } = useParams();
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teamName, setTeamName] = useState<string>('');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Player, direction: 'asc' | 'desc' }>({ key: 'overall', direction: 'desc' });
 
   useEffect(() => {
     async function load() {
       const lid = Number(leagueId);
       const l = await db.leagues.get(lid);
-      if(l && l.userTeamId) {
-         const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
-         setPlayers(p);
+      if(l) {
+         const targetTeamId = teamId ? Number(teamId) : l.userTeamId;
+         if (targetTeamId) {
+           const p = await db.players.where('teamId').equals(targetTeamId).toArray();
+           const t = await db.teams.get(targetTeamId);
+           setPlayers(p);
+           if (t) setTeamName(t.name);
+         }
       }
     }
     load();
-  }, [leagueId]);
+  }, [leagueId, teamId]);
 
   const toggleWatch = async (p: Player) => {
     p.isWatched = !p.isWatched;
@@ -58,8 +64,9 @@ export function Roster() {
 
   return (
     <div className="page-content">
-      <h1>Plantilla</h1>
-      <div className="glass-panel" style={{marginTop: '2rem', overflow: 'hidden'}}>
+      <h1 style={{marginBottom: 0}}>Plantilla</h1>
+      {teamName && <h3 style={{marginTop: 0, color: '#aaa'}}>{teamName}</h3>}
+      <div className="glass-panel" style={{marginTop: '1.5rem', overflow: 'hidden'}}>
         <table className="table-container">
           <thead>
             <tr>
@@ -79,7 +86,11 @@ export function Roster() {
                   <span style={{color: p.isWatched ? '#e67e22' : '#555', fontSize: '18px'}}>★</span>
                 </td>
                 <td style={{color: getPosColor(p.position), fontWeight: 'bold'}}>{p.position}</td>
-                <td>{p.name}</td>
+                <td>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.age}</td>
                 <td><strong>{p.overall}</strong></td>
                 <td>{p.potential}</td>

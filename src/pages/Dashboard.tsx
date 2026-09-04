@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type League, type Team, type Player } from '../db/db';
 import './Dashboard.css';
 
@@ -50,20 +50,35 @@ export function Dashboard() {
           <table className="table-container bb-table">
             <thead>
               <tr>
-                <th>Liga</th>
-                <th style={{textAlign: 'right'}}>GB</th>
+                <th>#</th>
+                <th>Team</th>
+                <th>W</th>
+                <th>D</th>
+                <th>L</th>
+                <th>PTS</th>
               </tr>
             </thead>
             <tbody>
-              {standings.map((t, i) => (
-                <tr key={t.id} style={{fontWeight: t.id === team?.id ? 'bold' : 'normal'}}>
-                  <td>{i + 1} <span style={{color: '#e67e22'}}>{t.name}</span></td>
-                  <td style={{textAlign: 'right'}}>{(standings[0].wins - t.wins) || 0}</td>
-                </tr>
-              ))}
+              {standings.map((t, i) => {
+                const pts = (t.wins * 3) + t.draws;
+                return (
+                  <tr key={t.id} style={{fontWeight: t.id === team?.id ? 'bold' : 'normal', background: t.id === team?.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
+                    <td style={{color: '#888'}}>{i + 1}</td>
+                    <td>
+                      <Link to={`/l/${leagueId}/team/${t.id}`} style={{color: t.id === team?.id ? '#3b82f6' : '#e67e22', textDecoration: 'none'}}>
+                        {t.name.substring(0,10)}
+                      </Link>
+                    </td>
+                    <td>{t.wins}</td>
+                    <td>{t.draws}</td>
+                    <td>{t.losses}</td>
+                    <td style={{fontWeight: 'bold', color: '#eab308'}}>{pts}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-          <div className="link-more">» Clasificación Completa</div>
+          <Link to={`/l/${leagueId}/standings`} className="link-more" style={{display: 'block', textDecoration: 'none'}}>» Clasificación Completa</Link>
         </div>
 
         <div className="col-center">
@@ -80,7 +95,7 @@ export function Dashboard() {
                 <li><span className="name">{starters[1]?.name}</span> <span className="stat">{starters[1]?.stats.goals} gol</span></li>
                 <li><span className="name">{starters[2]?.name}</span> <span className="stat">{starters[2]?.stats.assists} ast</span></li>
               </ul>
-              <div className="link-more">» Plantilla Completa</div>
+              <Link to={`/l/${leagueId}/roster`} className="link-more" style={{display: 'block', textDecoration: 'none'}}>» Plantilla Completa</Link>
             </div>
             
             <div>
@@ -90,7 +105,7 @@ export function Dashboard() {
                 <li>Contra: {team?.goalsAgainst} (3º)</li>
                 <li>Dif: {team!.goalsFor - team!.goalsAgainst}</li>
               </ul>
-              <div className="link-more">» Estadísticas del Equipo</div>
+              <Link to={`/l/${leagueId}/team_stats`} className="link-more" style={{display: 'block', textDecoration: 'none'}}>» Estadísticas del Equipo</Link>
             </div>
 
             <div>
@@ -101,7 +116,7 @@ export function Dashboard() {
                 <li>Beneficio (YTD): $0</li>
                 <li>Efectivo: $10M</li>
               </ul>
-              <div className="link-more">» Finanzas del Equipo</div>
+              <Link to={`/l/${leagueId}/finances`} className="link-more" style={{display: 'block', textDecoration: 'none'}}>» Finanzas del Equipo</Link>
             </div>
           </div>
         </div>
@@ -132,7 +147,11 @@ export function Dashboard() {
           <tbody>
             {starters.map(p => (
               <tr key={p.id}>
-                <td><span style={{color: '#e67e22'}}>{p.name}</span></td>
+                <td>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>
