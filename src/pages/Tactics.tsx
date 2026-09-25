@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Player, type Team } from '../db/db';
-import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info } from 'lucide-react';
+import { autoSelectLineupForTeam } from '../utils/lineupUtils';
+import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info, Sparkles } from 'lucide-react';
 import './Tactics.css';
 
 interface PitchSlot {
@@ -252,6 +253,13 @@ export function Tactics() {
     }
   };
 
+  const handleAutoLineup = async () => {
+    if (!team) return;
+    const updated = await autoSelectLineupForTeam(team.id!);
+    setPlayers([...updated]);
+    alert('⚡ ¡Alineación de 11 titulares configurada automáticamente con los mejores jugadores!');
+  };
+
   return (
     <div className="page-container tactics-page">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -259,17 +267,22 @@ export function Tactics() {
           <h1>Sistema Táctico & Pizarra de Estrategia</h1>
           <p style={{ color: '#94a3b8', margin: 0 }}>Configura la alineación titular, esquemas tácticos, penalizaciones por posición y lanzadores.</p>
         </div>
-        {team && (
-          <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <Shield color="#38bdf8" size={20} />
-            <div>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Media Ajustada Once:</span>
-              <strong style={{ color: effectiveTeamOvr < team.overall ? '#ef4444' : '#10b981', fontSize: '1.1rem' }}>
-                {effectiveTeamOvr} OVR {effectiveTeamOvr < team.overall ? `( Penalización Táctica )` : ''}
-              </strong>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="tm-btn-primary" onClick={handleAutoLineup} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#3b82f6', padding: '0.6rem 1.2rem', fontWeight: 'bold' }}>
+            <Sparkles size={16} /> Auto-Alinear (11 Titulares)
+          </button>
+          {team && (
+            <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+              <Shield color="#38bdf8" size={20} />
+              <div>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Media Ajustada Once:</span>
+                <strong style={{ color: effectiveTeamOvr < team.overall ? '#ef4444' : '#10b981', fontSize: '1.1rem' }}>
+                  {effectiveTeamOvr} OVR {effectiveTeamOvr < team.overall ? `( Penalización Táctica )` : ''}
+                </strong>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

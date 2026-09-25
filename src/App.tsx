@@ -114,6 +114,7 @@ function App() {
         <Route path="/l/:leagueId/hall_of_fame" element={<LeagueLayout><HallOfFame /></LeagueLayout>} />
         <Route path="/l/:leagueId/draft" element={<LeagueLayout><Draft /></LeagueLayout>} />
         <Route path="/l/:leagueId/youth_academy" element={<LeagueLayout><YouthAcademy /></LeagueLayout>} />
+        <Route path="/l/:leagueId/kit_creator" element={<LeagueLayout><KitCreator /></LeagueLayout>} />
         
         <Route path="/l/:leagueId/game_log" element={<LeagueLayout><GameLog /></LeagueLayout>} />
         <Route path="/l/:leagueId/leaders" element={<LeagueLayout><LeagueLeaders /></LeagueLayout>} />

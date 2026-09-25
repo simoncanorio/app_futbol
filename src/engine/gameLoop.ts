@@ -2,6 +2,7 @@ import { db, getInitialPlayerStats } from '../db/db';
 import { simulateMatch } from './matchEngine';
 import { generateLeagueFixtures } from './fixtureGenerator';
 import { processAITransfers } from './aiTransfers';
+import { autoSelectLineupForTeam, checkLineupReady } from '../utils/lineupUtils';
 
 export async function getLeagueMaxWeeks(leagueId: number) {
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
@@ -22,6 +23,14 @@ export async function getLeagueMaxWeeks(leagueId: number) {
 export async function advanceWeek(leagueId: number) {
   const league = await db.leagues.get(leagueId);
   if (!league) return;
+
+  // Enforce mandatory lineup: if user team lacks 11 starters, auto-select
+  if (league.userTeamId) {
+    const isReady = await checkLineupReady(league.userTeamId);
+    if (!isReady) {
+      await autoSelectLineupForTeam(league.userTeamId);
+    }
+  }
 
   const maxWeeks = await getLeagueMaxWeeks(leagueId);
 
@@ -153,7 +162,7 @@ export async function startNextSeason(leagueId: number) {
   }
   await db.teams.bulkPut(allTeams);
 
-  // 2. Reset player seasonal stats and advance age
+  // 2. Reset player seasonal stats, advance age, and update contract years
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
     if (p.stats) {
@@ -167,6 +176,17 @@ export async function startNextSeason(leagueId: number) {
     } else if (p.age > 32) {
       p.overall -= Math.floor(Math.random() * 3);
       p.potential = p.overall;
+    }
+
+    // Decrement contract years
+    if (p.contractYears !== undefined && p.contractYears > 0) {
+      p.contractYears -= 1;
+      if (p.contractYears === 0) {
+        // Contract expired -> becomes free agent
+        p.teamId = null;
+        p.lineupStatus = 'reserve';
+        p.pitchPosition = undefined;
+      }
     }
   }
   await db.players.bulkPut(allPlayers);

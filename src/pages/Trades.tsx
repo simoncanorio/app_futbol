@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League } from '../db/db';
-import { DollarSign, ShieldAlert, ArrowLeftRight, CheckCircle2, XCircle, Star } from 'lucide-react';
+import { DollarSign, ArrowLeftRight, CheckCircle2, XCircle, FileText } from 'lucide-react';
 
 export function Trades() {
   const { leagueId } = useParams();
@@ -19,10 +19,16 @@ export function Trades() {
   
   // Negotiation Modal
   const [negotiatingPlayer, setNegotiatingPlayer] = useState<Player | null>(null);
+  const [step, setStep] = useState<'club_fee' | 'player_contract'>('club_fee');
   const [tradeType, setTradeType] = useState<'transfer' | 'loan'>('transfer');
   const [offerAmount, setOfferAmount] = useState(0);
   const [sellOnPercent, setSellOnPercent] = useState(10);
   const [buyOptionFee, setBuyOptionFee] = useState(0);
+
+  // Step 2 Player contract terms
+  const [playerWage, setPlayerWage] = useState(0);
+  const [contractYears, setContractYears] = useState(3);
+  const [signingBonus, setSigningBonus] = useState(0);
 
   const [aiStatus, setAiStatus] = useState<{ status: 'idle' | 'accepted' | 'rejected' | 'counter'; msg: string; counterFee?: number }>({ status: 'idle', msg: '' });
 
@@ -59,113 +65,124 @@ export function Trades() {
 
   const handleOpenNegotiation = (p: Player) => {
     setNegotiatingPlayer(p);
+    setStep('club_fee');
     setTradeType('transfer');
-    setOfferAmount(Math.max(1000000, p.contract));
+    setOfferAmount(Math.max(1000000, p.contract * 10));
     setSellOnPercent(10);
-    setBuyOptionFee(Math.max(2000000, Math.floor(p.contract * 1.3)));
+    setBuyOptionFee(Math.max(2000000, Math.floor(p.contract * 12)));
+    setPlayerWage(p.contract || 2000000);
+    setContractYears(3);
+    setSigningBonus(Math.round((p.contract || 2000000) * 0.15));
     setAiStatus({ status: 'idle', msg: '' });
   };
 
   const handleProposeOffer = async () => {
     if (!negotiatingPlayer || !userTeam || !league) return;
 
-    const baseValue = negotiatingPlayer.contract;
+    const baseValue = negotiatingPlayer.contract * 8;
     
-    // Difficulty modifier
     let diffMultiplier = 1.1;
     if (league.difficulty === 'Hard') diffMultiplier = 1.35;
     if (league.difficulty === 'Insane') diffMultiplier = 1.6;
 
     let targetRequired = baseValue * diffMultiplier;
-    
-    // Sell-on bonus offset
     targetRequired -= (sellOnPercent * 0.01) * baseValue * 0.5;
 
     if (tradeType === 'transfer') {
       if (offerAmount > userTeam.budget) {
-        setAiStatus({ status: 'rejected', msg: '¡Tu presupuesto no es suficiente para cubrir esta oferta!' });
+        setAiStatus({ status: 'rejected', msg: '¡Tu presupuesto no es suficiente para cubrir el precio del traspaso!' });
         return;
       }
 
       if (offerAmount >= targetRequired) {
-        // AI Accepts!
-        negotiatingPlayer.teamId = userTeam.id!;
-        await db.players.put(negotiatingPlayer);
-
-        // Update budget
-        userTeam.budget -= offerAmount;
-        await db.teams.put(userTeam);
-
-        // Record Transaction
-        await db.transactions.add({
-          leagueId: league.id!,
-          type: 'transfer',
-          playerId: negotiatingPlayer.id!,
-          fromTeamId: Number(selectedTeamId),
-          toTeamId: userTeam.id!,
-          amount: offerAmount,
-          season: league.season,
-          week: league.currentWeek,
-          date: Date.now(),
-          sellOnFeePercent: sellOnPercent
-        });
-
-        setAiStatus({ status: 'accepted', msg: `¡Oferta aceptada! ${negotiatingPlayer.name} se une a ${userTeam.name} por $${(offerAmount/1000000).toFixed(2)}M.` });
-        setRoster(r => r.filter(x => x.id !== negotiatingPlayer.id));
+        // AI Club Accepts! Move to Step 2: Player Contract Negotiation
+        setStep('player_contract');
+        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Ahora negocia las condiciones personales con ${negotiatingPlayer.name}.` });
       } else if (offerAmount >= targetRequired * 0.8) {
-        // Counter offer
         const counter = Math.round(targetRequired);
         setAiStatus({
           status: 'counter',
-          msg: `El club rival rechaza los $${(offerAmount/1000000).toFixed(2)}M pero enviaron una contraoferta.`,
+          msg: `El club rival rechaza los $${(offerAmount/1000000).toFixed(2)}M pero exige una contraoferta.`,
           counterFee: counter
         });
       } else {
-        setAiStatus({ status: 'rejected', msg: `Oferta muy baja. El club considera que ${negotiatingPlayer.name} vale al menos $${(targetRequired/1000000).toFixed(2)}M.` });
+        setAiStatus({ status: 'rejected', msg: `Oferta por el traspaso muy baja. Exigen al menos $${(targetRequired/1000000).toFixed(2)}M.` });
       }
     } else {
       // Loan with buy option
       if (buyOptionFee >= targetRequired * 0.9) {
-        negotiatingPlayer.teamId = userTeam.id!;
-        negotiatingPlayer.isOnLoan = true;
-        negotiatingPlayer.loanedFromTeamId = Number(selectedTeamId);
-        negotiatingPlayer.buyOptionFee = buyOptionFee;
-
-        await db.players.put(negotiatingPlayer);
-
-        await db.transactions.add({
-          leagueId: league.id!,
-          type: 'loan',
-          playerId: negotiatingPlayer.id!,
-          fromTeamId: Number(selectedTeamId),
-          toTeamId: userTeam.id!,
-          amount: 0,
-          season: league.season,
-          week: league.currentWeek,
-          date: Date.now(),
-          buyOptionPrice: buyOptionFee
-        });
-
-        setAiStatus({ status: 'accepted', msg: `¡Cesión acordada! ${negotiatingPlayer.name} llega cedido a ${userTeam.name} con opción de compra por $${(buyOptionFee/1000000).toFixed(2)}M.` });
-        setRoster(r => r.filter(x => x.id !== negotiatingPlayer.id));
+        setStep('player_contract');
+        setAiStatus({ status: 'accepted', msg: `¡Cesión aceptada por el club rival! Procede a negociar el contrato con ${negotiatingPlayer.name}.` });
       } else {
         setAiStatus({ status: 'rejected', msg: 'Opción de compra rechazada. Exigen un valor de opción más alto.' });
       }
     }
   };
 
+  const handleFinalizePlayerContract = async () => {
+    if (!negotiatingPlayer || !userTeam || !league) return;
+
+    const askingWage = negotiatingPlayer.contract;
+    if (playerWage < askingWage * 0.9) {
+      setAiStatus({ status: 'rejected', msg: `${negotiatingPlayer.name} considera insuficiente el salario. Pide al menos $${(askingWage/1000000).toFixed(2)}M/año.` });
+      return;
+    }
+
+    if (offerAmount + signingBonus > userTeam.budget) {
+      setAiStatus({ status: 'rejected', msg: 'Presupuesto total insuficiente para cubrir el traspaso y la prima de fichaje.' });
+      return;
+    }
+
+    // Transfer execution
+    negotiatingPlayer.teamId = userTeam.id!;
+    negotiatingPlayer.contract = playerWage;
+    negotiatingPlayer.contractYears = contractYears;
+    negotiatingPlayer.contractEndSeason = league.season + contractYears;
+    negotiatingPlayer.isTransferListed = false;
+
+    if (tradeType === 'loan') {
+      negotiatingPlayer.isOnLoan = true;
+      negotiatingPlayer.loanedFromTeamId = Number(selectedTeamId);
+      negotiatingPlayer.buyOptionFee = buyOptionFee;
+    }
+
+    await db.players.put(negotiatingPlayer);
+
+    // Update budget
+    userTeam.budget -= (offerAmount + signingBonus);
+    await db.teams.put(userTeam);
+
+    // Record Transaction
+    await db.transactions.add({
+      leagueId: league.id!,
+      type: tradeType === 'loan' ? 'loan' : 'transfer',
+      playerId: negotiatingPlayer.id!,
+      fromTeamId: Number(selectedTeamId),
+      toTeamId: userTeam.id!,
+      amount: offerAmount,
+      season: league.season,
+      week: league.currentWeek,
+      date: Date.now(),
+      sellOnFeePercent: sellOnPercent,
+      buyOptionPrice: buyOptionFee
+    });
+
+    setAiStatus({ status: 'accepted', msg: `¡Fichaje completado! ${negotiatingPlayer.name} firma con ${userTeam.name} por ${contractYears} años.` });
+    setRoster(r => r.filter(x => x.id !== negotiatingPlayer.id));
+  };
+
   return (
     <div className="page-container">
       <div className="page-header">
         <h1>Centro de Traspasos & Negociaciones Avanzadas</h1>
-        <p style={{ color: '#94a3b8' }}>Negocia traspasos definitivos o cesiones con cláusulas y opciones de compra.</p>
+        <p style={{ color: '#94a3b8' }}>Negocia el precio del traspaso con el club rival y posteriormente el contrato personal con el jugador.</p>
       </div>
 
       {userTeam && (
         <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem' }}>
           <div className="glass-panel" style={{ padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
             <DollarSign color="#10b981" size={20} />
-            <span>Presupuesto Disponible: <strong>${(userTeam.budget / 1_000_000).toFixed(2)}M</strong></span>
+            <span>Presupuesto de Fichajes: <strong>${(userTeam.budget / 1_000_000).toFixed(2)}M</strong></span>
           </div>
         </div>
       )}
@@ -196,7 +213,7 @@ export function Trades() {
                 <th>Edad</th>
                 <th>OVR</th>
                 <th>POT</th>
-                <th>Valor Estimado</th>
+                <th>Salario Anual</th>
                 <th>Acción</th>
               </tr>
             </thead>
@@ -237,64 +254,107 @@ export function Trades() {
           <div className="tm-modal glass-panel" style={{ maxWidth: '550px' }}>
             <button className="tm-modal-close" onClick={() => setNegotiatingPlayer(null)}>✕</button>
 
-            <h2>Negociación por {negotiatingPlayer.name}</h2>
+            <h2>{step === 'club_fee' ? 'Paso 1: Negociación con el Club Rival' : 'Paso 2: Contrato Personal del Jugador'}</h2>
             <p className="tm-modal-sub">
-              {negotiatingPlayer.position} | OVR {negotiatingPlayer.overall} | Valor Base: ${(negotiatingPlayer.contract / 1_000_000).toFixed(2)}M
+              {negotiatingPlayer.name} ({negotiatingPlayer.position}) | OVR {negotiatingPlayer.overall} | Pretensión: ${(negotiatingPlayer.contract / 1_000_000).toFixed(2)}M/año
             </p>
 
-            <div className="tm-tabs" style={{ marginBottom: '1rem' }}>
-              <button
-                className={`tm-tab ${tradeType === 'transfer' ? 'active' : ''}`}
-                onClick={() => setTradeType('transfer')}
-              >
-                Traspaso Definitivo
-              </button>
-              <button
-                className={`tm-tab ${tradeType === 'loan' ? 'active' : ''}`}
-                onClick={() => setTradeType('loan')}
-              >
-                Cesión con Opción
-              </button>
-            </div>
-
-            {tradeType === 'transfer' ? (
+            {step === 'club_fee' ? (
               <>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Oferta Económica Base ($):</label>
-                  <input
-                    type="number"
-                    value={offerAmount}
-                    onChange={e => setOfferAmount(Number(e.target.value))}
-                    className="bb-input"
-                  />
-                  <p className="form-help">En millones: ${(offerAmount / 1_000_000).toFixed(2)}M</p>
+                <div className="tm-tabs" style={{ marginBottom: '1rem' }}>
+                  <button
+                    className={`tm-tab ${tradeType === 'transfer' ? 'active' : ''}`}
+                    onClick={() => setTradeType('transfer')}
+                  >
+                    Traspaso Definitivo
+                  </button>
+                  <button
+                    className={`tm-tab ${tradeType === 'loan' ? 'active' : ''}`}
+                    onClick={() => setTradeType('loan')}
+                  >
+                    Cesión con Opción
+                  </button>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Cláusula de Futura Venta (%):</label>
-                  <select
-                    value={sellOnPercent}
-                    onChange={e => setSellOnPercent(Number(e.target.value))}
-                    className="bb-select"
-                  >
-                    <option value={0}>0%</option>
-                    <option value={10}>10%</option>
-                    <option value={15}>15%</option>
-                    <option value={20}>20%</option>
-                  </select>
-                </div>
+                {tradeType === 'transfer' ? (
+                  <>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label>Oferta Económica de Traspaso al Club ($):</label>
+                      <input
+                        type="number"
+                        value={offerAmount}
+                        onChange={e => setOfferAmount(Number(e.target.value))}
+                        className="bb-input"
+                      />
+                      <p className="form-help">Monto ofrecido al club rival: ${(offerAmount / 1_000_000).toFixed(2)}M</p>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label>Cláusula de Futura Venta (%):</label>
+                      <select
+                        value={sellOnPercent}
+                        onChange={e => setSellOnPercent(Number(e.target.value))}
+                        className="bb-select"
+                      >
+                        <option value={0}>0%</option>
+                        <option value={10}>10%</option>
+                        <option value={15}>15%</option>
+                        <option value={20}>20%</option>
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>Precio Opción de Compra ($):</label>
+                    <input
+                      type="number"
+                      value={buyOptionFee}
+                      onChange={e => setBuyOptionFee(Number(e.target.value))}
+                      className="bb-input"
+                    />
+                    <p className="form-help">Opción a ejercer al final de temporada: ${(buyOptionFee / 1_000_000).toFixed(2)}M</p>
+                  </div>
+                )}
               </>
             ) : (
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Precio Opción de Compra ($):</label>
-                <input
-                  type="number"
-                  value={buyOptionFee}
-                  onChange={e => setBuyOptionFee(Number(e.target.value))}
-                  className="bb-input"
-                />
-                <p className="form-help">Precio a pagar al finalizar la temporada: ${(buyOptionFee / 1_000_000).toFixed(2)}M</p>
-              </div>
+              <>
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label>Salario Anual Ofrecido ($/año):</label>
+                  <input
+                    type="number"
+                    value={playerWage}
+                    onChange={e => setPlayerWage(Number(e.target.value))}
+                    className="bb-input"
+                  />
+                  <p className="form-help">En millones: ${(playerWage / 1_000_000).toFixed(2)}M / año</p>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label>Duración del Contrato (Años):</label>
+                  <select
+                    value={contractYears}
+                    onChange={e => setContractYears(Number(e.target.value))}
+                    className="bb-select"
+                  >
+                    <option value={1}>1 Año</option>
+                    <option value={2}>2 Años</option>
+                    <option value={3}>3 Años</option>
+                    <option value={4}>4 Años</option>
+                    <option value={5}>5 Años</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1.2rem' }}>
+                  <label>Prima de Fichaje al Jugador ($):</label>
+                  <input
+                    type="number"
+                    value={signingBonus}
+                    onChange={e => setSigningBonus(Number(e.target.value))}
+                    className="bb-input"
+                  />
+                  <p className="form-help">Pago único en efectivo: ${(signingBonus / 1_000_000).toFixed(2)}M</p>
+                </div>
+              </>
             )}
 
             {/* AI Status response */}
@@ -327,11 +387,15 @@ export function Trades() {
 
             <div className="tm-modal-actions">
               <button className="settings-btn" onClick={() => setNegotiatingPlayer(null)}>
-                {aiStatus.status === 'accepted' ? 'Cerrar' : 'Cancelar'}
+                Cancelar
               </button>
-              {aiStatus.status !== 'accepted' && (
+              {step === 'club_fee' ? (
                 <button className="tm-btn-primary" onClick={handleProposeOffer}>
-                  Enviar Oferta
+                  Acordar con el Club
+                </button>
+              ) : (
+                <button className="tm-btn-primary" onClick={handleFinalizePlayerContract}>
+                  Firmar Contrato y Fichar
                 </button>
               )}
             </div>

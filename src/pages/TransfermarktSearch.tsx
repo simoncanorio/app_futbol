@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { db, getInitialPlayerStats } from '../db/db';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { db, getInitialPlayerStats, type Player, type Team } from '../db/db';
 import {
   tmService,
   mapTMPositionToDB,
@@ -10,20 +10,21 @@ import {
   type TMMarketValuePoint
 } from '../services/transfermarkt';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Search, Globe, UserPlus, DollarSign, Activity, AlertCircle, Settings, Award } from 'lucide-react';
+import { Search, Globe, UserPlus, DollarSign, Activity, AlertCircle, Settings, Award, Tag, ArrowLeftRight } from 'lucide-react';
 import './TransfermarktSearch.css';
 
 export function TransfermarktSearch() {
   const { leagueId } = useParams();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'players' | 'clubs'>('players');
+  const [activeTab, setActiveTab] = useState<'transfer_list' | 'players' | 'clubs'>('transfer_list');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [playerResults, setPlayerResults] = useState<TMPlayerSearchResult[]>([]);
   const [clubResults, setClubResults] = useState<TMClubSearchResult[]>([]);
+  const [transferListedPlayers, setTransferListedPlayers] = useState<(Player & { teamName?: string })[]>([]);
 
   // Selected player for detail modal / market value timeline
   const [selectedPlayer, setSelectedPlayer] = useState<TMPlayerSearchResult | null>(null);
@@ -35,12 +36,28 @@ export function TransfermarktSearch() {
   const [apiBaseInput, setApiBaseInput] = useState(tmService.getApiBase());
 
   useEffect(() => {
-    // Initial search load on mount
-    if (!query) {
-      setQuery(activeTab === 'players' ? 'Vinicius' : 'Real Madrid');
+    async function loadTransferList() {
+      const lid = Number(leagueId);
+      if (!lid) return;
+      
+      const allPlayers = await db.players.where('leagueId').equals(lid).toArray();
+      const teams = await db.teams.where('leagueId').equals(lid).toArray();
+      const teamMap = new Map<number, string>(teams.map(t => [t.id!, t.name]));
+
+      const listed = allPlayers
+        .filter(p => p.isTransferListed || p.isLoanListed)
+        .map(p => ({ ...p, teamName: p.teamId ? teamMap.get(p.teamId) : 'Sin Club' }));
+
+      setTransferListedPlayers(listed.sort((a, b) => b.overall - a.overall));
+    }
+
+    loadTransferList();
+
+    if (!query && activeTab === 'players') {
+      setQuery('Vinicius');
       tmService.searchPlayers('Vinicius').then(res => setPlayerResults(res.results || []));
     }
-  }, []);
+  }, [leagueId, activeTab]);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -53,7 +70,7 @@ export function TransfermarktSearch() {
       if (activeTab === 'players') {
         const res = await tmService.searchPlayers(query);
         setPlayerResults(res.results || []);
-      } else {
+      } else if (activeTab === 'clubs') {
         const res = await tmService.searchClubs(query);
         setClubResults(res.results || []);
       }
@@ -80,37 +97,40 @@ export function TransfermarktSearch() {
     }
   };
 
-  const handleSignPlayer = async (p: TMPlayerSearchResult, target: 'userTeam' | 'freeAgents') => {
+  const handleSignPlayer = async (p: TMPlayerSearchResult) => {
     const lid = Number(leagueId);
     if (!lid) {
-      alert('Debes estar dentro de una liga activa para fichar o importar jugadores.');
+      alert('Debes estar dentro de una liga activa para fichar jugadores.');
       return;
     }
 
     const league = await db.leagues.get(lid);
-    if (!league) return;
-
-    let targetTeamId: number | null = null;
-    if (target === 'userTeam') {
-      if (!league.userTeamId) {
-        alert('No tienes un equipo asignado en esta liga.');
-        return;
-      }
-      targetTeamId = league.userTeamId;
+    if (!league || !league.userTeamId) {
+      alert('No tienes un equipo asignado en esta liga.');
+      return;
     }
 
     const ovr = mapMarketValueToOVR(p.marketValue);
     const pot = Math.min(99, ovr + 5);
+    const fee = p.marketValue ? Math.max(1000000, p.marketValue) : 5000000;
 
-    const newPlayer = {
+    const userTeam = await db.teams.get(league.userTeamId);
+    if (userTeam && userTeam.budget < fee) {
+      alert('Presupuesto de fichajes insuficiente para acometer esta compra.');
+      return;
+    }
+
+    const newPlayer: Player = {
       leagueId: lid,
-      teamId: targetTeamId,
+      teamId: league.userTeamId,
       name: p.name,
       age: p.age || 24,
       overall: ovr,
       potential: pot,
       position: mapTMPositionToDB(p.position),
-      contract: p.marketValue ? Math.max(500000, Math.floor(p.marketValue * 0.08)) : 2000000,
+      contract: Math.max(500000, Math.floor(fee * 0.08)),
+      contractYears: 3,
+      contractEndSeason: league.season + 3,
       stats: getInitialPlayerStats(),
       attributes: {
         pace: Math.min(99, ovr + 2),
@@ -128,15 +148,13 @@ export function TransfermarktSearch() {
     };
 
     await db.players.add(newPlayer);
-
-    if (target === 'userTeam') {
-      const userTeam = await db.teams.get(league.userTeamId!);
-      alert(`¡${p.name} (OVR ${ovr}) ha sido fichado por ${userTeam?.name || 'tu equipo'}!`);
-      navigate(`/l/${lid}/roster`);
-    } else {
-      alert(`¡${p.name} (OVR ${ovr}) ha sido agregado al mercado de Agentes Libres!`);
-      navigate(`/l/${lid}/free_agents`);
+    if (userTeam) {
+      userTeam.budget -= fee;
+      await db.teams.put(userTeam);
     }
+
+    alert(`¡${p.name} (OVR ${ovr}) ha sido fichado por ${userTeam?.name || 'tu equipo'} por €${(fee/1000000).toFixed(1)}M!`);
+    navigate(`/l/${lid}/roster`);
   };
 
   const handleSaveApiConfig = () => {
@@ -156,8 +174,8 @@ export function TransfermarktSearch() {
     <div className="tm-explorer-page">
       <div className="tm-header">
         <div>
-          <h1><Globe className="tm-icon-title" /> Transfermarkt Live Scout Hub</h1>
-          <p>Busca e importa jugadores y clubes reales del fútbol mundial en tiempo real a tu liga.</p>
+          <h1><Globe className="tm-icon-title" /> Transfermarkt Live Hub</h1>
+          <p>Mercado de fichajes oficial, lista de transferibles de la liga y buscador de estrellas internacionales.</p>
         </div>
 
         <button className="tm-config-btn" onClick={() => setShowConfig(!showConfig)}>
@@ -186,35 +204,99 @@ export function TransfermarktSearch() {
       {/* Tabs */}
       <div className="tm-tabs">
         <button
+          className={`tm-tab ${activeTab === 'transfer_list' ? 'active' : ''}`}
+          onClick={() => setActiveTab('transfer_list')}
+        >
+          <Tag size={16} /> Transferibles en Liga ({transferListedPlayers.length})
+        </button>
+        <button
           className={`tm-tab ${activeTab === 'players' ? 'active' : ''}`}
           onClick={() => setActiveTab('players')}
         >
-          <Search size={16} /> Buscar Jugadores Reales
+          <Search size={16} /> Mercado Internacional Reales
         </button>
         <button
           className={`tm-tab ${activeTab === 'clubs' ? 'active' : ''}`}
           onClick={() => setActiveTab('clubs')}
         >
-          <Award size={16} /> Buscar Clubes Reales
+          <Award size={16} /> Clubes Reales
         </button>
       </div>
 
-      {/* Search Bar */}
-      <form className="tm-search-bar" onSubmit={handleSearch}>
-        <div className="tm-input-wrapper">
-          <Search className="tm-search-icon" size={20} />
-          <input
-            type="text"
-            placeholder={activeTab === 'players' ? 'Ej: Vinicius, Haaland, Lamine Yamal, Bellingham...' : 'Ej: Real Madrid, Barcelona, River Plate, Boca Juniors...'}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            className="tm-search-input"
-          />
+      {/* Transfer List Tab */}
+      {activeTab === 'transfer_list' && (
+        <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
+          <h3><Tag size={20} color="#ef4444" /> Jugadores Declarados Transferibles o Cedibles</h3>
+          <p style={{ color: '#94a3b8', marginBottom: '1.5rem' }}>
+            Listado de futbolistas colocados en lista de transferencias por sus respectivos clubes en la liga.
+          </p>
+
+          <table className="table-container bb-table">
+            <thead>
+              <tr>
+                <th>Pos</th>
+                <th>Nombre</th>
+                <th>Club Actual</th>
+                <th>Edad</th>
+                <th>OVR</th>
+                <th>POT</th>
+                <th>Valor / Salario</th>
+                <th>Estado</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transferListedPlayers.map(p => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
+                  <td style={{ fontWeight: 'bold' }}>
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                      {p.name}
+                    </Link>
+                  </td>
+                  <td>{p.teamName}</td>
+                  <td>{p.age}</td>
+                  <td><strong>{p.overall}</strong></td>
+                  <td>{p.potential}</td>
+                  <td>${(p.contract / 1000000).toFixed(2)}M / año</td>
+                  <td>
+                    <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid #ef4444', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      En Venta
+                    </span>
+                  </td>
+                  <td>
+                    <button className="tm-btn-primary" onClick={() => navigate(`/l/${leagueId}/trades`)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
+                      <ArrowLeftRight size={14} /> Negociar Fichaje
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {transferListedPlayers.length === 0 && (
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem' }}>No hay jugadores transferibles en este momento. Puedes poner a tus jugadores en venta desde la pestaña Plantilla.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
-        <button type="submit" className="tm-search-btn" disabled={loading}>
-          {loading ? 'Cargando...' : 'Buscar'}
-        </button>
-      </form>
+      )}
+
+      {/* Search Bar for Real Players and Clubs */}
+      {activeTab !== 'transfer_list' && (
+        <form className="tm-search-bar" onSubmit={handleSearch} style={{ marginTop: '1.5rem' }}>
+          <div className="tm-input-wrapper">
+            <Search className="tm-search-icon" size={20} />
+            <input
+              type="text"
+              placeholder={activeTab === 'players' ? 'Ej: Vinicius, Haaland, Lamine Yamal, Bellingham...' : 'Ej: Real Madrid, Barcelona, River Plate, Boca Juniors...'}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="tm-search-input"
+            />
+          </div>
+          <button type="submit" className="tm-search-btn" disabled={loading}>
+            {loading ? 'Cargando...' : 'Buscar'}
+          </button>
+        </form>
+      )}
 
       {error && (
         <div className="tm-error-box">
@@ -256,11 +338,8 @@ export function TransfermarktSearch() {
                 </div>
 
                 <div className="tm-card-actions" onClick={e => e.stopPropagation()}>
-                  <button className="tm-btn-primary" onClick={() => handleSignPlayer(p, 'userTeam')}>
-                    <UserPlus size={14} /> Fichar para mi Equipo
-                  </button>
-                  <button className="tm-btn-secondary" onClick={() => handleSignPlayer(p, 'freeAgents')}>
-                    Agentes Libres
+                  <button className="tm-btn-primary" onClick={() => handleSignPlayer(p)} style={{ width: '100%' }}>
+                    <UserPlus size={14} /> Negociar Fichaje
                   </button>
                 </div>
               </div>
@@ -353,11 +432,8 @@ export function TransfermarktSearch() {
             )}
 
             <div className="tm-modal-actions">
-              <button className="tm-btn-primary" onClick={() => { handleSignPlayer(selectedPlayer, 'userTeam'); setSelectedPlayer(null); }}>
-                Fichar para mi Equipo
-              </button>
-              <button className="tm-btn-secondary" onClick={() => { handleSignPlayer(selectedPlayer, 'freeAgents'); setSelectedPlayer(null); }}>
-                Agregar a Agentes Libres
+              <button className="tm-btn-primary" style={{ width: '100%' }} onClick={() => { handleSignPlayer(selectedPlayer); setSelectedPlayer(null); }}>
+                Negociar Fichaje para mi Equipo
               </button>
             </div>
           </div>

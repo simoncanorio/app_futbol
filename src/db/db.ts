@@ -138,11 +138,16 @@ export interface Player {
   draftYear?: number;
   recruitedYear?: number;
   
-  // Scouting & Loans
+  // Scouting & Loans & Contracts
   isScouted?: boolean;
   isOnLoan?: boolean;
   loanedFromTeamId?: number;
   buyOptionFee?: number;
+  contractYears?: number;
+  contractEndSeason?: number;
+  isTransferListed?: boolean;
+  isLoanListed?: boolean;
+  askingTransferFee?: number;
 }
 
 export interface Team {
