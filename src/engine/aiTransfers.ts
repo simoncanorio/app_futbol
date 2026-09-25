@@ -98,7 +98,20 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     const sellerTeamId = target.teamId!;
     const seller = aiTeams.find(x => x.id === sellerTeamId);
 
-    // 4. Real Madrid vs Barcelona Rivalry Lock Check
+    // Player Personality & Ambition Checks (Task 3 & 12: Realism!)
+    // Ambicious players (e.g. Frenkie de Jong) refuse moving to significantly worse teams (e.g. Girona)
+    if (seller && (target.personality === 'Ambicioso' || target.overall >= 84)) {
+      if (buyer.overall < seller.overall - 4 && !target.isTransferListed) {
+        continue; // Player refuses transfer to smaller club!
+      }
+    }
+
+    // Loyal players refuse to leave unless transfer listed
+    if (target.personality === 'Leal' && !target.isTransferListed && Math.random() < 0.75) {
+      continue;
+    }
+
+    // Real Madrid vs Barcelona Rivalry Lock Check (Task 3)
     let rivalryMultiplier = 1.0;
     if (seller) {
       const sellerIsReal = seller.name.toLowerCase().includes('madrid') || seller.name.toLowerCase().includes('real');
@@ -109,7 +122,10 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
       }
     }
 
-    const fee = Math.round(target.contract * (isPrem ? 1.4 : 1.2) * difficultyFactor * rivalryMultiplier);
+    // Greedy personality increases fee
+    const greedyMultiplier = target.personality === 'Avaricioso' ? 1.35 : 1.0;
+
+    const fee = Math.round(target.contract * (isPrem ? 1.4 : 1.2) * difficultyFactor * rivalryMultiplier * greedyMultiplier);
     if (buyer.budget < fee) continue;
 
     // Transfer execution

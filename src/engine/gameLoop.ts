@@ -1,4 +1,4 @@
-import { db, getInitialPlayerStats } from '../db/db';
+import { db, getInitialPlayerStats, isTransferWindowOpen } from '../db/db';
 import { simulateMatch } from './matchEngine';
 import { generateLeagueFixtures } from './fixtureGenerator';
 import { processAITransfers } from './aiTransfers';
@@ -110,8 +110,35 @@ export async function advanceWeek(leagueId: number) {
     home.budget += weeklyProfit;
   }
 
-  // AI Club Transfers during transfer window (weeks 1-5, 18-22)
-  if (league.currentWeek <= 5 || (league.currentWeek >= 18 && league.currentWeek <= 22)) {
+  // Update Player Fatigue & Injury Recovery (Task 13)
+  const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
+  for (const p of allPlayers) {
+    if (p.isInjured) {
+      p.injuryWeeks = (p.injuryWeeks || 1) - 1;
+      if (p.injuryWeeks <= 0) {
+        p.isInjured = false;
+        p.injuryWeeks = 0;
+      }
+    }
+
+    if (p.lineupStatus === 'starter') {
+      p.fatigue = Math.min(100, (p.fatigue || 0) + 12);
+      
+      // Injury risk if fatigue high & injuryProne
+      const baseRisk = (p.fatigue / 100) * 0.04 + ((p.injuryProne || 30) / 100) * 0.03;
+      if (Math.random() < baseRisk && !p.isInjured) {
+        p.isInjured = true;
+        p.injuryWeeks = Math.floor(Math.random() * 4) + 1;
+      }
+    } else {
+      // Recovery for bench/reserve
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 22);
+    }
+  }
+  await db.players.bulkPut(allPlayers);
+
+  // AI Club Transfers ONLY during open transfer windows (Task 11: Weeks 1-4, 19-22)
+  if (isTransferWindowOpen(league.currentWeek)) {
     await processAITransfers(league, allTeams);
   }
 
@@ -129,7 +156,6 @@ export async function startNextSeason(leagueId: number) {
   if (league.userTeamId) {
     const userTeam = allTeams.find(t => t.id === league.userTeamId);
     if (userTeam) {
-      // Find rank among same domestic league teams
       const domTeams = allTeams.filter(t => t.domesticLeague === userTeam.domesticLeague);
       domTeams.sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
       const pos = domTeams.findIndex(t => t.id === userTeam.id) + 1;
@@ -162,27 +188,55 @@ export async function startNextSeason(leagueId: number) {
   }
   await db.teams.bulkPut(allTeams);
 
-  // 2. Reset player seasonal stats, advance age, and update contract years
+  // 2. Non-linear Dynamic Player Evolution / Devolution (Task 1)
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
     if (p.stats) {
       if (!p.historicalStats) p.historicalStats = {};
       p.historicalStats[league.season] = { ...p.stats };
-      p.stats = getInitialPlayerStats();
     }
+
     p.age += 1;
-    if (p.age < 28 && p.overall < p.potential) {
-      p.overall += Math.floor(Math.random() * 3);
-    } else if (p.age > 32) {
-      p.overall -= Math.floor(Math.random() * 3);
+    const gamesPlayed = p.stats?.gamesPlayed || 0;
+
+    // Dynamic Growth Engine
+    if (p.age <= 23) {
+      if (p.developmentType === 'early_bloomer' || p.developmentType === 'normal') {
+        const growth = gamesPlayed > 15 ? Math.floor(Math.random() * 4) + 2 : Math.floor(Math.random() * 2) + 1;
+        p.overall = Math.min(p.potential, p.overall + growth);
+      } else if (p.developmentType === 'bust') {
+        // Busts don't reach potential if not playing
+        if (gamesPlayed < 10) p.potential = Math.max(p.overall, p.potential - 3);
+        else p.overall = Math.min(p.potential, p.overall + 1);
+      }
+    } else if (p.age >= 24 && p.age <= 28) {
+      // Late bloomers explode here (e.g. Raphinha)
+      if (p.developmentType === 'late_bloomer' && gamesPlayed > 15) {
+        const growth = Math.floor(Math.random() * 4) + 2;
+        p.overall = Math.min(92, p.overall + growth);
+        p.potential = Math.max(p.potential, p.overall);
+      } else if (p.overall < p.potential && gamesPlayed > 12) {
+        p.overall += 1;
+      }
+    } else if (p.age >= 31) {
+      // Physical devolution for veterans
+      const decline = Math.floor(Math.random() * 3) + 1;
+      p.overall = Math.max(45, p.overall - decline);
       p.potential = p.overall;
+      if (p.attributes) {
+        p.attributes.pace = Math.max(40, p.attributes.pace - (decline + 2));
+        p.attributes.physical = Math.max(45, p.attributes.physical - decline);
+      }
     }
+
+    // Reset seasonal stats & fatigue
+    p.stats = getInitialPlayerStats();
+    p.fatigue = 0;
 
     // Decrement contract years
     if (p.contractYears !== undefined && p.contractYears > 0) {
       p.contractYears -= 1;
       if (p.contractYears === 0) {
-        // Contract expired -> becomes free agent
         p.teamId = null;
         p.lineupStatus = 'reserve';
         p.pitchPosition = undefined;

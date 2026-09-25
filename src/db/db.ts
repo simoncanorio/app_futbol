@@ -149,6 +149,14 @@ export interface Player {
   isTransferListed?: boolean;
   isLoanListed?: boolean;
   askingTransferFee?: number;
+
+  // New Features: Personality, Fatigue, Injury Proneness, Dynamic Development
+  personality?: 'Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático';
+  fatigue?: number; // 0 to 100%
+  injuryProne?: number; // 1 to 100
+  isInjured?: boolean;
+  injuryWeeks?: number;
+  developmentType?: 'early_bloomer' | 'normal' | 'late_bloomer' | 'bust';
 }
 
 export interface Team {
@@ -323,4 +331,19 @@ export function getSpecificPosition(p: Partial<Player>): string {
     return pace > 88 ? 'EI' : 'DC';
   }
   return p.position || 'MC';
+}
+
+export function formatMoney(val: number): string {
+  if (!val || isNaN(val)) return '$0';
+  const abs = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (abs >= 1000000000) return `${sign}$${(abs / 1000000000).toFixed(2)}B`;
+  if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(1)}M`;
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(0)}k`;
+  return `${sign}$${abs}`;
+}
+
+export function isTransferWindowOpen(week: number): boolean {
+  // Summer window: weeks 1-4, Winter window: weeks 19-22
+  return (week >= 1 && week <= 4) || (week >= 19 && week <= 22);
 }

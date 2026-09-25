@@ -68,27 +68,53 @@ const FORMATIONS: Record<string, PitchSlot[]> = {
   ]
 };
 
-export function getPositionalPenalty(playerPos: string, slotType: 'POR' | 'DEF' | 'MED' | 'DEL', slotLabel: string): number {
-  if (playerPos === slotType) {
-    // Specific position sub-check for strikers on wing
-    if (playerPos === 'DEL' && (slotLabel === 'EI' || slotLabel === 'ED')) return 4; // Minor penalty for pure ST on wing
+export function getPositionalPenalty(
+  playerPos: string,
+  slotType: 'POR' | 'DEF' | 'MED' | 'DEL',
+  slotLabel: string,
+  specificPos?: string
+): number {
+  const spec = (specificPos || '').toUpperCase();
+  const label = (slotLabel || '').toUpperCase();
+
+  // Goalkeeper check
+  if (spec === 'POR' || label === 'POR' || playerPos === 'POR' || slotType === 'POR') {
+    if ((spec === 'POR' || playerPos === 'POR') && (label === 'POR' || slotType === 'POR')) return 0;
+    return 35;
+  }
+
+  // Exact match on specific position (EI on EI, ED on ED, DC on DC, DFC on DFC, PO on POR)
+  if (spec && (spec === label || (spec === 'EI' && label === 'EI') || (spec === 'ED' && label === 'ED') || (spec === 'DC' && label === 'DC'))) {
     return 0;
   }
-  
-  if (playerPos === 'POR' || slotType === 'POR') return 40; // Extreme penalty for Goalkeeper out of net
 
-  if (playerPos === 'DEL') {
-    if (slotType === 'MED') return 10;
-    if (slotType === 'DEF') return 22;
+  // Winger versatility: EI and ED can play anywhere in DEL (EI, ED, DC, SD) with 0 penalty
+  if ((spec === 'EI' || spec === 'ED') && slotType === 'DEL') {
+    return 0;
   }
-  if (playerPos === 'MED') {
-    if (slotType === 'DEL') return 6;
-    if (slotType === 'DEF') return 12;
+
+  // Pure Strikers on wing get 0 or max 2 penalty
+  if (spec === 'DC' && (label === 'EI' || label === 'ED')) {
+    return 2;
   }
-  if (playerPos === 'DEF') {
-    if (slotType === 'MED') return 8;
-    if (slotType === 'DEL') return 24;
+
+  // Midfielders (MCO, MC, MCD, MI, MD) playing in MED slots get 0 penalty
+  if (playerPos === 'MED' && slotType === 'MED') {
+    return 0;
   }
+
+  // Defenders (DFC, LI, LD, CAD, CAI) playing in DEF slots
+  if (playerPos === 'DEF' && slotType === 'DEF') {
+    if ((spec === 'LI' && label === 'LD') || (spec === 'LD' && label === 'LI')) return 2;
+    return 0;
+  }
+
+  if (playerPos === slotType) return 0;
+
+  if (playerPos === 'DEL' && slotType === 'MED') return 8;
+  if (playerPos === 'MED' && slotType === 'DEL') return 4;
+  if (playerPos === 'MED' && slotType === 'DEF') return 10;
+  if (playerPos === 'DEF' && slotType === 'MED') return 8;
 
   return 10;
 }
@@ -229,7 +255,7 @@ export function Tactics() {
 
   starters.forEach(p => {
     const slot = currentSlots.find(s => s.id === p.pitchPosition);
-    const penalty = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label) : 0;
+    const penalty = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition) : 0;
     totalEffectiveOvr += Math.max(35, p.overall - penalty);
     starterCount++;
   });

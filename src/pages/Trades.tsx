@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League } from '../db/db';
-import { DollarSign, ArrowLeftRight, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { db, type Player, type Team, type League, formatMoney, isTransferWindowOpen } from '../db/db';
+import { DollarSign, ArrowLeftRight, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
 
 export function Trades() {
   const { leagueId } = useParams();
@@ -79,6 +79,26 @@ export function Trades() {
   const handleProposeOffer = async () => {
     if (!negotiatingPlayer || !userTeam || !league) return;
 
+    if (!isTransferWindowOpen(league.currentWeek)) {
+      setAiStatus({ status: 'rejected', msg: '🔒 El mercado de traspasos está cerrado. Solo se permiten operaciones en semanas 1-4 (Verano) y 19-22 (Invierno).' });
+      return;
+    }
+
+    const sellerTeam = teams.find(t => t.id === negotiatingPlayer.teamId);
+
+    // Player Personality & Ambition check (Task 3 & 12)
+    if (sellerTeam && (negotiatingPlayer.personality === 'Ambicioso' || negotiatingPlayer.overall >= 84)) {
+      if (userTeam.overall < sellerTeam.overall - 4 && !negotiatingPlayer.isTransferListed) {
+        setAiStatus({ status: 'rejected', msg: `¡${negotiatingPlayer.name} es un jugador ambicioso y rechaza negociar con un club de menor estatus!` });
+        return;
+      }
+    }
+
+    if (negotiatingPlayer.personality === 'Leal' && !negotiatingPlayer.isTransferListed && Math.random() < 0.75) {
+      setAiStatus({ status: 'rejected', msg: `¡${negotiatingPlayer.name} es leal a su club actual y no desea escuchar ofertas en este momento!` });
+      return;
+    }
+
     const baseValue = negotiatingPlayer.contract * 8;
     
     let diffMultiplier = 1.1;
@@ -95,21 +115,19 @@ export function Trades() {
       }
 
       if (offerAmount >= targetRequired) {
-        // AI Club Accepts! Move to Step 2: Player Contract Negotiation
         setStep('player_contract');
-        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Ahora negocia las condiciones personales con ${negotiatingPlayer.name}.` });
+        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Personalidad del jugador: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones personales.` });
       } else if (offerAmount >= targetRequired * 0.8) {
         const counter = Math.round(targetRequired);
         setAiStatus({
           status: 'counter',
-          msg: `El club rival rechaza los $${(offerAmount/1000000).toFixed(2)}M pero exige una contraoferta.`,
+          msg: `El club rival rechaza los ${formatMoney(offerAmount)} pero exige una contraoferta de ${formatMoney(counter)}.`,
           counterFee: counter
         });
       } else {
-        setAiStatus({ status: 'rejected', msg: `Oferta por el traspaso muy baja. Exigen al menos $${(targetRequired/1000000).toFixed(2)}M.` });
+        setAiStatus({ status: 'rejected', msg: `Oferta por el traspaso muy baja. Exigen al menos ${formatMoney(targetRequired)}.` });
       }
     } else {
-      // Loan with buy option
       if (buyOptionFee >= targetRequired * 0.9) {
         setStep('player_contract');
         setAiStatus({ status: 'accepted', msg: `¡Cesión aceptada por el club rival! Procede a negociar el contrato con ${negotiatingPlayer.name}.` });
@@ -122,9 +140,9 @@ export function Trades() {
   const handleFinalizePlayerContract = async () => {
     if (!negotiatingPlayer || !userTeam || !league) return;
 
-    const askingWage = negotiatingPlayer.contract;
+    const askingWage = negotiatingPlayer.personality === 'Avaricioso' ? negotiatingPlayer.contract * 1.3 : negotiatingPlayer.contract;
     if (playerWage < askingWage * 0.9) {
-      setAiStatus({ status: 'rejected', msg: `${negotiatingPlayer.name} considera insuficiente el salario. Pide al menos $${(askingWage/1000000).toFixed(2)}M/año.` });
+      setAiStatus({ status: 'rejected', msg: `${negotiatingPlayer.name} (Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}) considera insuficiente el salario. Exige al menos ${formatMoney(askingWage)}/año.` });
       return;
     }
 

@@ -134,7 +134,51 @@ export async function createNewLeague(
       }
     }
 
-    await db.players.bulkAdd(players);
+    // Pregenerate 5 Youth Academy (Filial) prospects for every team (Task 7)
+    const youthProspects: any[] = [];
+    const youthPositions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'MED', 'MED', 'DEL'];
+    const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
+    const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Avaricioso', 'Ambicioso', 'Leal', 'Pragmático'];
+    const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'late_bloomer', 'bust'];
+
+    for (let y = 0; y < 5; y++) {
+      const ovr = randomInt(62, 74);
+      const pot = Math.min(96, ovr + randomInt(12, 22));
+      youthProspects.push({
+        leagueId,
+        teamId,
+        name: `${randomName()} (Canterano)`,
+        age: randomInt(16, 18),
+        overall: ovr,
+        potential: pot,
+        position: youthPositions[y],
+        specificPosition: youthSpecific[y],
+        contract: randomInt(300000, 900000),
+        contractYears: randomInt(3, 5),
+        contractEndSeason: startYear + randomInt(3, 5),
+        lineupStatus: 'youth',
+        personality: personalities[Math.floor(Math.random() * personalities.length)],
+        developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+        fatigue: 0,
+        injuryProne: randomInt(10, 75),
+        stats: getInitialPlayerStats(),
+        attributes: {
+          pace: randomInt(60, 92),
+          shooting: randomInt(50, 88),
+          passing: randomInt(55, 90),
+          dribbling: randomInt(60, 92),
+          defending: randomInt(40, 82),
+          physical: randomInt(50, 84)
+        },
+        bio: {
+          height: randomInt(168, 192),
+          weight: randomInt(60, 85),
+          country: countries[Math.floor(Math.random() * countries.length)]
+        }
+      });
+    }
+
+    await db.players.bulkAdd([...players, ...youthProspects]);
   }
 
   const targetIndex = userTeamIndex >= 0 && userTeamIndex < createdTeamIds.length ? userTeamIndex : 0;
@@ -274,6 +318,49 @@ export async function createRealLeagueFromTransfermarkt(
             }
           });
         }
+      }
+
+      // Pregenerate 5 Filial prospects
+      const youthPositions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'MED', 'MED', 'DEL'];
+      const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
+      const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Avaricioso', 'Ambicioso', 'Leal', 'Pragmático'];
+      const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'late_bloomer', 'bust'];
+
+      for (let y = 0; y < 5; y++) {
+        const ovr = randomInt(62, 74);
+        const pot = Math.min(96, ovr + randomInt(12, 22));
+        dbPlayers.push({
+          leagueId,
+          teamId,
+          name: `${randomName()} (Canterano)`,
+          age: randomInt(16, 18),
+          overall: ovr,
+          potential: pot,
+          position: youthPositions[y],
+          specificPosition: youthSpecific[y],
+          contract: randomInt(300000, 900000),
+          contractYears: randomInt(3, 5),
+          contractEndSeason: startYear + randomInt(3, 5),
+          lineupStatus: 'youth',
+          personality: personalities[Math.floor(Math.random() * personalities.length)],
+          developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+          fatigue: 0,
+          injuryProne: randomInt(10, 75),
+          stats: getInitialPlayerStats(),
+          attributes: {
+            pace: randomInt(60, 92),
+            shooting: randomInt(50, 88),
+            passing: randomInt(55, 90),
+            dribbling: randomInt(60, 92),
+            defending: randomInt(40, 82),
+            physical: randomInt(50, 84)
+          },
+          bio: {
+            height: randomInt(168, 192),
+            weight: randomInt(60, 85),
+            country: countries[Math.floor(Math.random() * countries.length)]
+          }
+        });
       }
 
       await db.players.bulkAdd(dbPlayers);

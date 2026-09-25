@@ -132,15 +132,15 @@ export function ScoutingNetwork() {
     loadData();
   };
 
-  const handleSignProspect = async (p: Player) => {
+  const handleSignProspect = async (p: Player, destination: 'youth' | 'first_team') => {
     if (!userTeam) return;
 
     p.teamId = userTeam.id!;
-    p.lineupStatus = 'youth';
+    p.lineupStatus = destination === 'youth' ? 'youth' : 'bench';
     p.isScouted = false;
     await db.players.put(p);
 
-    alert(`¡${p.name} ha sido fichado para tu Filial!`);
+    alert(`¡${p.name} ha sido fichado para tu ${destination === 'youth' ? 'Filial' : 'Primer Equipo'}!`);
     loadData();
   };
 
@@ -267,9 +267,14 @@ export function ScoutingNetwork() {
                     )}
                   </td>
                   <td>
-                    <button className="tm-btn-primary" onClick={() => handleSignProspect(p)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
-                      Fichar para Filial
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="tm-btn-primary" onClick={() => handleSignProspect(p, 'youth')} style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', background: '#059669' }}>
+                        Fichar Filial
+                      </button>
+                      <button className="tm-btn-primary" onClick={() => handleSignProspect(p, 'first_team')} style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', background: '#38bdf8' }}>
+                        Fichar 1º Equipo
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );

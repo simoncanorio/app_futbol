@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { db, getInitialPlayerStats, type Player, type Team } from '../db/db';
+import { db, getInitialPlayerStats, type Player, type Team, formatMoney, isTransferWindowOpen } from '../db/db';
 import {
   tmService,
   mapTMPositionToDB,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type League, type Team } from '../db/db';
+import { db, type Player, type League, type Team, formatMoney } from '../db/db';
 import { DollarSign, CheckCircle2, XCircle, FileText } from 'lucide-react';
 
 export function FreeAgents() {

@@ -88,27 +88,36 @@ export function History() {
       <div className="glass-panel trophy-cabinet-section">
         <h3><Trophy size={20} color="#eab308" /> Vitrina de Trofeos Oficial</h3>
         <div className="trophies-grid">
-          {Array.from({ length: clubHistory.championsLeagueTitles }).map((_, i) => (
-            <div key={`ucl-${i}`} className="trophy-item gold">
+          {(clubHistory.championsYears && clubHistory.championsYears.length > 0
+            ? clubHistory.championsYears
+            : Array.from({ length: clubHistory.championsLeagueTitles }).map((_, i) => 2000 + i * 4)
+          ).map((yr, i) => (
+            <div key={`ucl-${i}`} className="trophy-item gold" title={`Champions League ${yr}`}>
               <Trophy size={28} />
-              <span>Champions</span>
-              <small>Continental</small>
+              <span style={{ fontWeight: 'bold' }}>Champions</span>
+              <small style={{ color: '#fbbf24', fontWeight: 'bold' }}>{yr}</small>
             </div>
           ))}
 
-          {Array.from({ length: Math.min(12, clubHistory.domesticLeagueTitles) }).map((_, i) => (
-            <div key={`league-${i}`} className="trophy-item blue">
+          {(clubHistory.leagueYears && clubHistory.leagueYears.length > 0
+            ? clubHistory.leagueYears
+            : Array.from({ length: Math.min(12, clubHistory.domesticLeagueTitles) }).map((_, i) => 2000 + i * 2)
+          ).map((yr, i) => (
+            <div key={`league-${i}`} className="trophy-item blue" title={`Liga Doméstica ${yr}`}>
               <Award size={24} />
-              <span>Liga Nº{i + 1}</span>
-              <small>Nacional</small>
+              <span style={{ fontWeight: 'bold' }}>LaLiga</span>
+              <small style={{ color: '#38bdf8', fontWeight: 'bold' }}>{yr}</small>
             </div>
           ))}
 
-          {Array.from({ length: Math.min(8, clubHistory.domesticCupTitles) }).map((_, i) => (
-            <div key={`cup-${i}`} className="trophy-item green">
+          {(clubHistory.cupYears && clubHistory.cupYears.length > 0
+            ? clubHistory.cupYears.slice(0, 15)
+            : Array.from({ length: Math.min(8, clubHistory.domesticCupTitles) }).map((_, i) => 2000 + i * 3)
+          ).map((yr, i) => (
+            <div key={`cup-${i}`} className="trophy-item green" title={`Copa del Rey / FA Cup ${yr}`}>
               <Landmark size={24} />
-              <span>Copa Rey/FA</span>
-              <small>Nacional</small>
+              <span style={{ fontWeight: 'bold' }}>Copa Nacional</span>
+              <small style={{ color: '#10b981', fontWeight: 'bold' }}>{yr}</small>
             </div>
           ))}
         </div>

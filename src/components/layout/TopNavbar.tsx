@@ -38,6 +38,9 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
       } else if (weeks === 'end_season') {
         const mw = await getLeagueMaxWeeks(leagueId);
         weeksToAdvance = Math.max(0, (mw + 1) - league.currentWeek);
+      } else if (weeks === 'winter_window') {
+        weeksToAdvance = Math.max(0, 19 - league.currentWeek);
+        if (weeksToAdvance <= 0) weeksToAdvance = 1;
       } else if (weeks === 'start_cup') {
         const mw = await getLeagueMaxWeeks(leagueId);
         const cupStart = Math.floor(mw / 2);
@@ -99,8 +102,9 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
             {playOpen && !(league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks) && (
               <div className="dropdown-menu">
                 <button onClick={() => handleAdvance(1)}>Avanzar 1 Semana</button>
-                <button onClick={() => handleAdvance('start_cup')}>Avanzar hasta Copa</button>
-                <button onClick={() => handleAdvance('end_season')}>Avanzar hasta Fin de Temporada</button>
+                <button onClick={() => handleAdvance('winter_window')}>❄️ Avanzar hasta Mercado de Invierno (Semana 19)</button>
+                <button onClick={() => handleAdvance('start_cup')}>🏆 Avanzar hasta Copa</button>
+                <button onClick={() => handleAdvance('end_season')}>🏁 Avanzar hasta Fin de Temporada</button>
               </div>
             )}
             <div className="status-text">
