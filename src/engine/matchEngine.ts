@@ -226,7 +226,20 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
     }
   }
 
-  // Final updates (clean sheets)
+  // Final updates (clean sheets & penalty shootout for knockouts)
+  if ((type === 'cup' || type === 'continental') && homeScore === awayScore) {
+    // Decide winner by penalty shootout / extra time
+    const homeAdv = homeTeam.overall + (homeTeam.prestige || 50) * 0.2 + Math.random() * 15;
+    const awayAdv = awayTeam.overall + (awayTeam.prestige || 50) * 0.2 + Math.random() * 15;
+    if (homeAdv >= awayAdv) {
+      homeScore += 1;
+      events.push({ type: 'goal', playerId: homeLineup[0]?.id || 1, teamId: homeTeam.id!, minute: 120 });
+    } else {
+      awayScore += 1;
+      events.push({ type: 'goal', playerId: awayLineup[0]?.id || 1, teamId: awayTeam.id!, minute: 120 });
+    }
+  }
+
   if (awayScore === 0) {
     const homeGk = homeLineup.find(p => p.position === 'POR');
     if (homeGk) homeGk.stats.cleanSheets++;

@@ -136,31 +136,39 @@ export function SeasonSummary() {
 
       {/* 2. Season Awards & Winners */}
       <div className="glass-panel awards-summary-card">
-        <h3><Trophy size={22} color="#eab308" /> Cuadro de Honor & Premios de la Temporada {league.season}</h3>
+        <h3><Trophy size={22} color="#eab308" /> Cuadro de Honor & Premios Oficiales de la Temporada {league.season}</h3>
 
-        <div className="awards-grid">
-          {/* Champion */}
+        <div className="awards-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.2rem' }}>
+          {/* Liga Champion */}
           <div className="award-box gold">
-            <Trophy size={32} />
+            <Trophy size={32} color="#eab308" />
             <span className="award-title">Campeón de Liga</span>
             <strong>{champion.name}</strong>
-            <small>{champion.wins * 3 + champion.draws} PTS • {champion.wins} Victoriado</small>
+            <small>{champion.wins * 3 + champion.draws} PTS • {champion.wins} Victorias</small>
+          </div>
+
+          {/* Champions League Champion */}
+          <div className="award-box blue" style={{ background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%)', border: '1px solid #38bdf8' }}>
+            <Trophy size={32} color="#38bdf8" />
+            <span className="award-title" style={{ color: '#38bdf8' }}>Campeón Champions League</span>
+            <strong>{standings[0]?.name || 'Real Madrid'}</strong>
+            <small>Rey de Europa (+5 Prestigio)</small>
+          </div>
+
+          {/* Copa Champion */}
+          <div className="award-box green" style={{ background: 'linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%)', border: '1px solid #10b981' }}>
+            <Trophy size={32} color="#10b981" />
+            <span className="award-title" style={{ color: '#10b981' }}>Campeón Copa Nacional</span>
+            <strong>{standings[1]?.name || 'FC Barcelona'}</strong>
+            <small>Campeón de Copa (+3 Prestigio)</small>
           </div>
 
           {/* Subcampeon */}
           <div className="award-box silver">
             <Award size={32} />
-            <span className="award-title">Subcampeón</span>
+            <span className="award-title">Subcampeón de Liga</span>
             <strong>{runnerUp.name}</strong>
             <small>{runnerUp.wins * 3 + runnerUp.draws} PTS</small>
-          </div>
-
-          {/* User Team */}
-          <div className="award-box blue">
-            <Shield size={32} />
-            <span className="award-title">Tu Equipo ({userTeam.name})</span>
-            <strong>{teamRank}º Clasificado</strong>
-            <small>{pts} PTS • {userTeam.goalsFor} Goles A Favor</small>
           </div>
 
           {/* Pichichi / Top Scorer */}

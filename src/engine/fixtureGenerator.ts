@@ -93,60 +93,38 @@ export async function generateLeagueFixtures(leagueId: number) {
     allFixtures.push(...fixtures);
   }
 
-  // 2. Cup Fixtures (Copa Nacional / Copa del Rey - Distributed Knockout Schedule)
-  // 16avos (Semana 8), 8vos (Semana 15), 4tos (Semana 22), Semifinales (Semana 29), Final (Semana 36)
-  const cupSchedule = [
-    { week: 8, roundName: '16avos de Final' },
-    { week: 15, roundName: 'Octavos de Final' },
-    { week: 22, roundName: 'Cuartos de Final' },
-    { week: 29, roundName: 'Semifinales' },
-    { week: 36, roundName: 'Gran Final de Copa' }
-  ];
-
+  // 2. Cup Fixtures (Initial Round: Week 8)
   for (const domLeague in leaguesMap) {
     const domTeams = [...leaguesMap[domLeague]];
-    if (domTeams.length >= 4) {
-      domTeams.sort((a, b) => b.overall - a.overall);
-      cupSchedule.forEach((stage, idx) => {
-        const homeT = domTeams[idx % domTeams.length];
-        const awayT = domTeams[(idx + 3) % domTeams.length];
-        if (homeT && awayT && homeT.id !== awayT.id) {
-          allFixtures.push({
-            leagueId,
-            homeTeamId: homeT.id!,
-            awayTeamId: awayT.id!,
-            homeScore: 0,
-            awayScore: 0,
-            week: stage.week,
-            isPlayed: false,
-            type: 'cup',
-            events: []
-          });
-        }
-      });
+    // Shuffle teams for realistic draw
+    for (let i = domTeams.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [domTeams[i], domTeams[j]] = [domTeams[j], domTeams[i]];
+    }
+    for (let i = 0; i < domTeams.length - 1; i += 2) {
+      if (domTeams[i] && domTeams[i + 1]) {
+        allFixtures.push({
+          leagueId,
+          homeTeamId: domTeams[i].id!,
+          awayTeamId: domTeams[i + 1].id!,
+          homeScore: 0,
+          awayScore: 0,
+          week: 8,
+          isPlayed: false,
+          type: 'cup',
+          events: []
+        });
+      }
     }
   }
 
-  // 3. UEFA Champions League Fixtures
-  // Fase de Liga (Semanas 4, 9, 14, 19, 24, 27) + Knockout Playoffs (8vos W31, 4tos W33, Semis W35, Final W38)
-  const championsLeagueSchedule = [
-    { week: 4, roundName: 'Fase de Liga - Jornada 1' },
-    { week: 9, roundName: 'Fase de Liga - Jornada 2' },
-    { week: 14, roundName: 'Fase de Liga - Jornada 3' },
-    { week: 19, roundName: 'Fase de Liga - Jornada 4' },
-    { week: 24, roundName: 'Fase de Liga - Jornada 5' },
-    { week: 27, roundName: 'Fase de Liga - Jornada 6' },
-    { week: 31, roundName: 'Champions League - Octavos de Final' },
-    { week: 33, roundName: 'Champions League - Cuartos de Final' },
-    { week: 35, roundName: 'Champions League - Semifinales' },
-    { week: 38, roundName: 'Gran Final de Champions League' }
-  ];
-
-  const topTeams = [...teams].sort((a, b) => b.overall - a.overall).slice(0, 10);
-  if (topTeams.length >= 4) {
-    championsLeagueSchedule.forEach((stage, idx) => {
-      const homeT = topTeams[idx % topTeams.length];
-      const awayT = topTeams[(idx + 2) % topTeams.length];
+  // 3. UEFA Champions League Fixtures (League Phase: Weeks 4, 9, 14, 19, 24, 27)
+  const topTeams = [...teams].sort((a, b) => b.overall - a.overall);
+  const clMatchWeeks = [4, 9, 14, 19, 24, 27];
+  clMatchWeeks.forEach((weekNum, idx) => {
+    for (let i = 0; i < topTeams.length - 1; i += 2) {
+      const homeT = topTeams[(i + idx) % topTeams.length];
+      const awayT = topTeams[(i + idx + 1) % topTeams.length];
       if (homeT && awayT && homeT.id !== awayT.id) {
         allFixtures.push({
           leagueId,
@@ -154,14 +132,14 @@ export async function generateLeagueFixtures(leagueId: number) {
           awayTeamId: awayT.id!,
           homeScore: 0,
           awayScore: 0,
-          week: stage.week,
+          week: weekNum,
           isPlayed: false,
           type: 'continental',
           events: []
         });
       }
-    });
-  }
+    }
+  });
 
   await db.matches.bulkAdd(allFixtures as any);
 }
