@@ -4,9 +4,11 @@ import { db, type League } from '../db/db';
 import { exportDB, importInto } from "dexie-export-import";
 import './Home.css';
 import { Trash2, Download, Upload } from 'lucide-react';
+import { CustomModal } from '../components/common/CustomModal';
 
 export function Home() {
   const [leagues, setLeagues] = useState<League[]>([]);
+  const [deletingLeagueId, setDeletingLeagueId] = useState<number | null>(null);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,7 +31,6 @@ export function Home() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      alert("Error al exportar la base de datos.");
       console.error(error);
     }
   };
@@ -40,25 +41,23 @@ export function Home() {
     try {
       await importInto(db, file, { clearTablesBeforeImport: true });
       await loadLeagues();
-      alert("Partida importada con éxito.");
     } catch (error) {
-      alert("Error al importar la base de datos. Asegúrate de que es un archivo válido.");
       console.error(error);
     }
-    // reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm("¿Estás seguro de que quieres eliminar esta liga? Se borrarán todos los datos irremediablemente.")) {
-      await db.transaction('rw', db.leagues, db.teams, db.players, db.matches, async () => {
-        await db.leagues.delete(id);
-        await db.teams.where('leagueId').equals(id).delete();
-        await db.players.where('leagueId').equals(id).delete();
-        await db.matches.where('leagueId').equals(id).delete();
-      });
-      await loadLeagues();
-    }
+  const confirmDelete = async () => {
+    if (!deletingLeagueId) return;
+    const id = deletingLeagueId;
+    await db.transaction('rw', db.leagues, db.teams, db.players, db.matches, async () => {
+      await db.leagues.delete(id);
+      await db.teams.where('leagueId').equals(id).delete();
+      await db.players.where('leagueId').equals(id).delete();
+      await db.matches.where('leagueId').equals(id).delete();
+    });
+    setDeletingLeagueId(null);
+    await loadLeagues();
   };
 
   return (
@@ -117,7 +116,7 @@ export function Home() {
                 <td>{l.difficulty}</td>
                 <td>Hace un momento</td>
                 <td style={{textAlign: 'right'}}>
-                  <button className="delete-btn-sm" onClick={() => handleDelete(l.id!)} title="Eliminar Liga">
+                  <button className="delete-btn-sm" onClick={() => setDeletingLeagueId(l.id!)} title="Eliminar Liga">
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -129,6 +128,19 @@ export function Home() {
           </tbody>
         </table>
       </div>
+
+      {deletingLeagueId && (
+        <CustomModal
+          isOpen={true}
+          title="Eliminar Liga Guardada"
+          message="¿Estás seguro de que quieres eliminar esta liga? Se borrarán todos los datos irremediablemente."
+          confirmText="Sí, Eliminar Liga"
+          cancelText="Cancelar"
+          type="danger"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeletingLeagueId(null)}
+        />
+      )}
     </div>
   );
 }

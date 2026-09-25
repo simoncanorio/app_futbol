@@ -64,18 +64,25 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
     const atkAtts = atkPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
     const defAtts = defPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
 
+    // Tactical Style Modifiers
+    const atkStyle = attackingTeam.tacticalStyle || 'Tiki-Taka (Posesión)';
+    const defStyle = defendingTeam.tacticalStyle || 'Tiki-Taka (Posesión)';
+
+    let passBonus = atkStyle.includes('Tiki-Taka') || atkStyle.includes('Posición') ? 12 : 0;
+    let defBonus = defStyle.includes('Gegenpressing') || defStyle.includes('Autobús') ? 12 : 0;
+
     // Action choice
     if (state.zone === 'own' || state.zone === 'mid') {
       // Pass or Dribble
       atkPlayer.stats.touches++;
-      if (Math.random() > 0.2) { // Pass
+      if (Math.random() > (atkStyle.includes('Directo') ? 0.4 : 0.2)) { // Pass
         atkPlayer.stats.passesAttempted++;
         if (state.zone === 'own') atkPlayer.stats.ownHalfPassesAttempted++;
         else atkPlayer.stats.oppHalfPassesAttempted++;
         
         // Pass success depends on passing vs opponent interception
-        const passRoll = Math.random() * 100 + (atkAtts.passing * 0.5);
-        const defRoll = Math.random() * 100 + (defAtts.defending * 0.3);
+        const passRoll = Math.random() * 100 + (atkAtts.passing * 0.5) + passBonus;
+        const defRoll = Math.random() * 100 + (defAtts.defending * 0.3) + defBonus;
         
         if (passRoll > defRoll) {
           atkPlayer.stats.passesCompleted++;

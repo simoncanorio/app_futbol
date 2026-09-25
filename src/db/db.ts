@@ -169,6 +169,7 @@ export interface Team {
   domesticLeague: string; // 'LaLiga' o 'Premier League'
   overall: number; 
   prestige?: number; // 0 to 100 (Club Prestige Rating)
+  tacticalStyle?: string; // e.g. Tiki-Taka, Gegenpressing, Contraataque
   wins: number;
   draws: number;
   losses: number;

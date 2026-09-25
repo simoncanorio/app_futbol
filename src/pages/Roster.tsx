@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
 import { Tag, RefreshCw, AlertOctagon, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { CustomModal } from '../components/common/CustomModal';
 
 export function Roster() {
   const { leagueId, teamId } = useParams();
@@ -80,24 +81,27 @@ export function Roster() {
     }
   };
 
-  const handleTerminateContract = async (p: Player) => {
-    if (!team) return;
+  const [terminatingPlayer, setTerminatingPlayer] = useState<Player | null>(null);
+
+  const executeTerminateContract = async () => {
+    if (!terminatingPlayer || !team) return;
+    const p = terminatingPlayer;
     const severanceFee = Math.round(p.contract * 0.5);
-    if (window.confirm(`¿Rescindir el contrato de ${p.name}? Se abonará una indemnización de $${(severanceFee/1000000).toFixed(2)}M.`)) {
-      if (team.budget < severanceFee) {
-        alert("Presupuesto insuficiente para abonar la indemnización de rescisión.");
-        return;
-      }
-      p.teamId = null;
-      p.lineupStatus = 'reserve';
-      await db.players.put(p);
 
-      team.budget -= severanceFee;
-      await db.teams.put(team);
-
-      setPlayers(players.filter(x => x.id !== p.id));
-      alert(`Contrato rescindido. ${p.name} se convierte en Agente Libre.`);
+    if (team.budget < severanceFee) {
+      setRenewStatus({ type: 'rejected', msg: 'Presupuesto insuficiente para abonar la indemnización de rescisión.' });
+      return;
     }
+
+    p.teamId = null;
+    p.lineupStatus = 'reserve';
+    await db.players.put(p);
+
+    team.budget -= severanceFee;
+    await db.teams.put(team);
+
+    setPlayers(players.filter(x => x.id !== p.id));
+    setTerminatingPlayer(null);
   };
 
   const getPosColor = (pos: string) => {
@@ -225,7 +229,7 @@ export function Roster() {
                         <RefreshCw size={12} /> Renovar
                       </button>
                       <button
-                        onClick={() => handleTerminateContract(p)}
+                        onClick={() => setTerminatingPlayer(p)}
                         style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '3px 6px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
                         title="Rescindir contrato pagando indemnización"
                       >
@@ -239,6 +243,20 @@ export function Roster() {
           </tbody>
         </table>
       </div>
+
+      {/* Contract Termination Confirmation Modal */}
+      {terminatingPlayer && (
+        <CustomModal
+          isOpen={true}
+          title="Rescisión de Contrato"
+          message={`¿Rescindir el contrato de ${terminatingPlayer.name}? Se abonará una indemnización de indemnización de $${((terminatingPlayer.contract * 0.5) / 1000000).toFixed(2)}M en efectivo.`}
+          confirmText="Sí, Rescindir Contrato"
+          cancelText="Cancelar"
+          type="danger"
+          onConfirm={executeTerminateContract}
+          onCancel={() => setTerminatingPlayer(null)}
+        />
+      )}
 
       {/* Renewal Modal */}
       {renewingPlayer && (

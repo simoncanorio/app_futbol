@@ -74,6 +74,60 @@ export function Dashboard() {
   const topScorers = [...starters].sort((a, b) => (b.stats?.goals || 0) - (a.stats?.goals || 0));
   const topAssists = [...starters].sort((a, b) => (b.stats?.assists || 0) - (a.stats?.assists || 0));
 
+  const handleExportSave = async () => {
+    if (!leagueId) return;
+    const lid = Number(leagueId);
+    const l = await db.leagues.get(lid);
+    const teams = await db.teams.where('leagueId').equals(lid).toArray();
+    const players = await db.players.where('leagueId').equals(lid).toArray();
+    const matches = await db.matches.where('leagueId').equals(lid).toArray();
+    const history = await db.history.where('leagueId').equals(lid).toArray();
+
+    const saveData = {
+      version: 1,
+      exportedAt: Date.now(),
+      league: l,
+      teams,
+      players,
+      matches,
+      history
+    };
+
+    const jsonStr = JSON.stringify(saveData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `football_gm_save_league_${lid}_season_${l?.season || 2026}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportSave = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const saveData = JSON.parse(text);
+
+      if (saveData && saveData.league && saveData.teams && saveData.players) {
+        await db.leagues.put(saveData.league);
+        await db.teams.bulkPut(saveData.teams);
+        await db.players.bulkPut(saveData.players);
+        if (saveData.matches) await db.matches.bulkPut(saveData.matches);
+        if (saveData.history) await db.history.bulkPut(saveData.history);
+
+        window.location.reload();
+      } else {
+        alert('Archivo de guardado no válido.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error al importar la partida guardada.');
+    }
+  };
+
   return (
     <div className="dashboard-wrapper">
       {/* Top Banner Header */}
@@ -109,6 +163,25 @@ export function Dashboard() {
               <span className="lbl">Reputación Mánager</span>
               <strong className="val">{league?.managerReputation || 60} pts</strong>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '1rem' }}>
+            <button
+              onClick={handleExportSave}
+              className="tm-btn-primary"
+              style={{ fontSize: '0.78rem', padding: '0.4rem 0.8rem', background: '#0284c7' }}
+              title="Guardar copia en archivo JSON"
+            >
+              💾 Exportar Save (JSON)
+            </button>
+            <label
+              className="tm-btn-primary"
+              style={{ fontSize: '0.78rem', padding: '0.4rem 0.8rem', background: '#059669', cursor: 'pointer', display: 'inline-block', margin: 0 }}
+              title="Cargar partida desde archivo JSON"
+            >
+              📂 Cargar Save (JSON)
+              <input type="file" accept=".json" onChange={handleImportSave} style={{ display: 'none' }} />
+            </label>
           </div>
         </div>
       </div>
