@@ -13,7 +13,6 @@ import { Schedule } from './pages/Schedule';
 import { Roster } from './pages/Roster';
 import { Finances } from './pages/Finances';
 import { History } from './pages/History';
-import { PowerRankings } from './pages/PowerRankings';
 import { Transactions } from './pages/Transactions';
 import { Notes } from './pages/Notes';
 import { FreeAgents } from './pages/FreeAgents';
@@ -42,6 +41,9 @@ import { PlayerProfile } from './pages/PlayerProfile';
 import { Tactics } from './pages/Tactics';
 import { GMHistory } from './pages/GMHistory';
 import { SeasonSummary } from './pages/SeasonSummary';
+import { TransfermarktSearch } from './pages/TransfermarktSearch';
+import { ScoutingNetwork } from './pages/ScoutingNetwork';
+import { KitCreator } from './pages/KitCreator';
 import './App.css';
 
 function LeagueLayout({ children }: { children: React.ReactNode }) {
@@ -99,12 +101,13 @@ function App() {
         <Route path="/l/:leagueId/team/:teamId" element={<LeagueLayout><Roster /></LeagueLayout>} />
         <Route path="/l/:leagueId/finances" element={<LeagueLayout><Finances /></LeagueLayout>} />
         <Route path="/l/:leagueId/history" element={<LeagueLayout><History /></LeagueLayout>} />
-        <Route path="/l/:leagueId/power_rankings" element={<LeagueLayout><PowerRankings /></LeagueLayout>} />
         <Route path="/l/:leagueId/transactions" element={<LeagueLayout><Transactions /></LeagueLayout>} />
         <Route path="/l/:leagueId/notes" element={<LeagueLayout><Notes /></LeagueLayout>} />
         <Route path="/l/:leagueId/tactics" element={<LeagueLayout><Tactics /></LeagueLayout>} />
         <Route path="/l/:leagueId/gm_history" element={<LeagueLayout><GMHistory /></LeagueLayout>} />
         <Route path="/l/:leagueId/free_agents" element={<LeagueLayout><FreeAgents /></LeagueLayout>} />
+        <Route path="/l/:leagueId/transfermarkt" element={<LeagueLayout><TransfermarktSearch /></LeagueLayout>} />
+        <Route path="/l/:leagueId/scouting" element={<LeagueLayout><ScoutingNetwork /></LeagueLayout>} />
         <Route path="/l/:leagueId/trades" element={<LeagueLayout><Trades /></LeagueLayout>} />
         <Route path="/l/:leagueId/compare_players" element={<LeagueLayout><ComparePlayers /></LeagueLayout>} />
         <Route path="/l/:leagueId/watch_list" element={<LeagueLayout><WatchList /></LeagueLayout>} />

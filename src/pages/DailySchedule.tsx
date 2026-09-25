@@ -1,117 +1,279 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, type Match, type Team, type League } from '../db/db';
+import { db, type Match, type Team, type Player, type League } from '../db/db';
 import { advanceWeek } from '../engine/gameLoop';
+import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
+import { Play, CheckCircle, Calendar, ChevronLeft, ChevronRight, Trophy } from 'lucide-react';
 import './DailySchedule.css';
 
 interface MatchView extends Match {
-  homeName: string;
-  awayName: string;
-  homeOvr: number;
-  awayOvr: number;
-  homeScorer: string; // Mockup
-  awayScorer: string; // Mockup
+  homeTeam: Team;
+  awayTeam: Team;
 }
 
 export function DailySchedule() {
   const { leagueId } = useParams();
   const [league, setLeague] = useState<League | null>(null);
+  const [selectedJornada, setSelectedJornada] = useState<number>(1);
+  const [maxJornadas, setMaxJornadas] = useState<number>(38);
   const [matches, setMatches] = useState<MatchView[]>([]);
+  const [selectedMatch, setSelectedMatch] = useState<MatchView | null>(null);
+  const [viewingPlayedSummary, setViewingPlayedSummary] = useState<MatchView | null>(null);
+  const [homePlayers, setHomePlayers] = useState<Player[]>([]);
+  const [awayPlayers, setAwayPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const loadMatches = async () => {
+  const loadData = async () => {
     const lid = Number(leagueId);
-    const l = await db.leagues.get(lid);
-    if(!l) return;
-    setLeague(l);
+    if (!lid) return;
 
-    // Get last week's matches
-    const recentMatches = await db.matches
+    const l = await db.leagues.get(lid);
+    if (!l) return;
+    setLeague(l);
+    setSelectedJornada(l.currentWeek);
+
+    // Calculate total matchdays from teams count
+    const teams = await db.teams.where('leagueId').equals(lid).toArray();
+    const teamMap = new Map(teams.map(t => [t.id!, t]));
+
+    const numTeams = teams.length;
+    const computedMax = numTeams > 1 ? (numTeams % 2 === 0 ? (numTeams - 1) * 2 : numTeams * 2) : 38;
+    setMaxJornadas(computedMax);
+
+    // Load fixtures for current selected week
+    const weekMatches = await db.matches
       .where('leagueId')
       .equals(lid)
-      .reverse()
-      .limit(20) // About a week's worth of matches (2 leagues * 10 matches)
+      .filter(m => m.week === (selectedJornada || l.currentWeek))
       .toArray();
 
-    if(recentMatches.length === 0) return;
-
-    const teamIds = new Set<number>();
-    recentMatches.forEach(m => { teamIds.add(m.homeTeamId); teamIds.add(m.awayTeamId); });
-    
-    const teams = await db.teams.where('id').anyOf([...teamIds]).toArray();
-    const teamMap = new Map(teams.map(t => [t.id, t]));
-
-    const mockScorers = ['J. Pérez', 'L. Messi (regen)', 'C. Ronaldo (regen)', 'K. Mbappé', 'E. Haaland'];
-
-    const views: MatchView[] = recentMatches.map(m => {
-      const h = teamMap.get(m.homeTeamId)!;
-      const a = teamMap.get(m.awayTeamId)!;
-      return {
-        ...m,
-        homeName: h.name,
-        awayName: a.name,
-        homeOvr: h.overall,
-        awayOvr: a.overall,
-        homeScorer: m.homeScore > 0 ? mockScorers[Math.floor(Math.random() * mockScorers.length)] : '',
-        awayScorer: m.awayScore > 0 ? mockScorers[Math.floor(Math.random() * mockScorers.length)] : '',
-      }
-    });
+    const views: MatchView[] = weekMatches.map(m => ({
+      ...m,
+      homeTeam: teamMap.get(m.homeTeamId) || { name: 'Equipo Local', overall: 75 } as Team,
+      awayTeam: teamMap.get(m.awayTeamId) || { name: 'Equipo Visitante', overall: 75 } as Team
+    }));
 
     setMatches(views);
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadMatches();
+    loadData();
   }, [leagueId]);
 
-  const handleSimulate = async () => {
-    if(!leagueId) return;
+  useEffect(() => {
+    async function loadWeekMatches() {
+      const lid = Number(leagueId);
+      if (!lid) return;
+
+      const weekMatches = await db.matches
+        .where('leagueId')
+        .equals(lid)
+        .filter(m => m.week === selectedJornada)
+        .toArray();
+
+      const teams = await db.teams.where('leagueId').equals(lid).toArray();
+      const teamMap = new Map(teams.map(t => [t.id!, t]));
+
+      const views: MatchView[] = weekMatches.map(m => ({
+        ...m,
+        homeTeam: teamMap.get(m.homeTeamId) || { name: 'Equipo Local', overall: 75 } as Team,
+        awayTeam: teamMap.get(m.awayTeamId) || { name: 'Equipo Visitante', overall: 75 } as Team
+      }));
+
+      setMatches(views);
+    }
+    loadWeekMatches();
+  }, [selectedJornada, leagueId]);
+
+  const handleMatchClick = async (m: MatchView) => {
+    if (m.isPlayed) {
+      // Unplayed restriction rule: If already played, show match summary modal instead of live 3D sim!
+      setViewingPlayedSummary(m);
+    } else {
+      // Unplayed match: Launch 3D live match engine!
+      setSelectedMatch(m);
+      const hPlayers = await db.players.where('teamId').equals(m.homeTeamId).toArray();
+      const aPlayers = await db.players.where('teamId').equals(m.awayTeamId).toArray();
+      setHomePlayers(hPlayers);
+      setAwayPlayers(aPlayers);
+    }
+  };
+
+  const handleFinishMatch = async (homeScore: number, awayScore: number, events: Match['events']) => {
+    if (!selectedMatch) return;
+
+    selectedMatch.homeScore = homeScore;
+    selectedMatch.awayScore = awayScore;
+    selectedMatch.isPlayed = true;
+    selectedMatch.events = events;
+
+    await db.matches.put(selectedMatch);
+    setSelectedMatch(null);
+    loadData();
+  };
+
+  const handleSimulateWeek = async () => {
+    if (!leagueId) return;
     await advanceWeek(Number(leagueId));
-    loadMatches();
+    loadData();
   };
 
   return (
     <div className="page-container ds-page">
-      <div className="page-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-        <h1>Calendario Diario</h1>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <button className="play-btn-lg" onClick={handleSimulate}>Simular Semana</button>
+          <h1>Calendario Diario de Partidos & Simulación 3D</h1>
+          <p style={{ color: '#94a3b8', margin: 0 }}>Partidos distribuidos por jornadas oficiales (Jornada 1 a 38).</p>
         </div>
+        <button className="play-btn-lg" onClick={handleSimulateWeek}>
+          Simular Jornada {league?.currentWeek}
+        </button>
       </div>
 
+      {/* Jornada Navigation Selector */}
+      <div className="jornada-bar glass-panel">
+        <button
+          className="jornada-nav-btn"
+          disabled={selectedJornada <= 1}
+          onClick={() => setSelectedJornada(j => Math.max(1, j - 1))}
+        >
+          <ChevronLeft size={18} /> Anterior
+        </button>
+
+        <div className="jornada-select-wrapper">
+          <Calendar size={18} color="#38bdf8" />
+          <select
+            value={selectedJornada}
+            onChange={e => setSelectedJornada(Number(e.target.value))}
+            className="bb-select jornada-select"
+          >
+            {Array.from({ length: maxJornadas }, (_, i) => i + 1).map(j => (
+              <option key={j} value={j}>
+                Jornada {j} {j === league?.currentWeek ? '(Jornada Actual)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          className="jornada-nav-btn"
+          disabled={selectedJornada >= maxJornadas}
+          onClick={() => setSelectedJornada(j => Math.min(maxJornadas, j + 1))}
+        >
+          Siguiente <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Fixture Match Cards Grid */}
       <div className="ds-grid">
         {matches.map(m => (
-          <div key={m.id} className="match-card">
+          <div
+            key={m.id}
+            className={`match-card glass-panel ${m.isPlayed ? 'match-played' : 'match-pending'}`}
+            onClick={() => handleMatchClick(m)}
+          >
             <div className="mc-left">
               <div className="mc-team">
                 <div className="mc-team-info">
-                  <span className="mc-name" style={{color: m.homeScore > m.awayScore ? '#fff' : '#aaa', fontWeight: m.homeScore > m.awayScore ? 'bold' : 'normal'}}>{m.homeName}</span>
-                  <span className="mc-ovr">{m.homeOvr} OVR</span>
+                  <span className={`mc-name ${m.isPlayed && m.homeScore > m.awayScore ? 'winner' : ''}`}>
+                    {m.homeTeam.name}
+                  </span>
+                  <span className="mc-ovr">OVR {m.homeTeam.overall}</span>
                 </div>
-                <div className="mc-score">{m.homeScore}</div>
+                <div className="mc-score">{m.isPlayed ? m.homeScore : '-'}</div>
               </div>
+
               <div className="mc-team">
                 <div className="mc-team-info">
-                  <span className="mc-name" style={{color: m.awayScore > m.homeScore ? '#fff' : '#aaa', fontWeight: m.awayScore > m.homeScore ? 'bold' : 'normal'}}>{m.awayName}</span>
-                  <span className="mc-ovr">{m.awayOvr} OVR</span>
+                  <span className={`mc-name ${m.isPlayed && m.awayScore > m.homeScore ? 'winner' : ''}`}>
+                    {m.awayTeam.name}
+                  </span>
+                  <span className="mc-ovr">OVR {m.awayTeam.overall}</span>
                 </div>
-                <div className="mc-score">{m.awayScore}</div>
+                <div className="mc-score">{m.isPlayed ? m.awayScore : '-'}</div>
               </div>
             </div>
-            
+
             <div className="mc-right">
-              {m.homeScorer && <div className="mc-scorer">⚽ {m.homeScorer} (H)</div>}
-              {m.awayScorer && <div className="mc-scorer">⚽ {m.awayScorer} (A)</div>}
-            </div>
-            
-            <div className="mc-boxscore">
-               Box<br/>Score
+              {m.isPlayed ? (
+                <span className="status-badge played">
+                  <CheckCircle size={14} /> Finalizado
+                </span>
+              ) : (
+                <button className="tm-btn-primary play-3d-btn">
+                  <Play size={14} /> Ver en 3D
+                </button>
+              )}
             </div>
           </div>
         ))}
-        {matches.length === 0 && (
-          <div style={{color: '#aaa', marginTop: '2rem'}}>Aún no hay partidos jugados. Haz clic en "Simular Semana".</div>
+
+        {!loading && matches.length === 0 && (
+          <div className="ds-empty glass-panel">
+            <Trophy size={32} color="#94a3b8" />
+            <p>No se encontraron partidos programados para la Jornada {selectedJornada}.</p>
+          </div>
         )}
       </div>
+
+      {/* 3D Live Engine Modal (Only for Unplayed matches) */}
+      {selectedMatch && (
+        <LiveMatchEngine
+          match={selectedMatch}
+          homeTeam={selectedMatch.homeTeam}
+          awayTeam={selectedMatch.awayTeam}
+          homePlayers={homePlayers}
+          awayPlayers={awayPlayers}
+          onFinish={handleFinishMatch}
+          onClose={() => setSelectedMatch(null)}
+        />
+      )}
+
+      {/* Played Match Recap Summary Modal */}
+      {viewingPlayedSummary && (
+        <div className="tm-modal-overlay" onClick={() => setViewingPlayedSummary(null)}>
+          <div className="tm-modal glass-panel" onClick={e => e.stopPropagation()}>
+            <button className="tm-modal-close" onClick={() => setViewingPlayedSummary(null)}>✕</button>
+            <h2>Resumen Oficial del Partido</h2>
+            <p className="tm-modal-sub">
+              Jornada {viewingPlayedSummary.week} • Encuentro Finalizado
+            </p>
+
+            <div className="recap-header">
+              <div className="recap-team">
+                <h3>{viewingPlayedSummary.homeTeam.name}</h3>
+                <span className="score-lg">{viewingPlayedSummary.homeScore}</span>
+              </div>
+              <span className="vs-divider">VS</span>
+              <div className="recap-team">
+                <span className="score-lg">{viewingPlayedSummary.awayScore}</span>
+                <h3>{viewingPlayedSummary.awayTeam.name}</h3>
+              </div>
+            </div>
+
+            <div className="recap-events">
+              <h4>Goles y Eventos Destacados</h4>
+              {viewingPlayedSummary.events && viewingPlayedSummary.events.length > 0 ? (
+                viewingPlayedSummary.events.map((ev, idx) => (
+                  <div key={idx} className="recap-event-item">
+                    <span className="min">{ev.minute}'</span>
+                    <span>⚽ Gol anotado por jugador ID #{ev.playerId}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Partido disputado sin incidencias de gol registradas.</p>
+              )}
+            </div>
+
+            <div className="tm-modal-actions">
+              <button className="settings-btn" onClick={() => setViewingPlayedSummary(null)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

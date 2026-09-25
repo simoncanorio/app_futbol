@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League } from '../db/db';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 
 export function PlayerProfile() {
   const { leagueId, playerId } = useParams();
-  const navigate = useNavigate();
   const [player, setPlayer] = useState<Player | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [league, setLeague] = useState<League | null>(null);
@@ -30,12 +30,20 @@ export function PlayerProfile() {
 
   if (!player) return <div className="page-container">Cargando...</div>;
 
+  const radarData = [
+    { subject: 'Ritmo (PAC)', A: player.attributes?.pace || 70, fullMark: 100 },
+    { subject: 'Tiro (SHO)', A: player.attributes?.shooting || 70, fullMark: 100 },
+    { subject: 'Pase (PAS)', A: player.attributes?.passing || 70, fullMark: 100 },
+    { subject: 'Regate (DRI)', A: player.attributes?.dribbling || 70, fullMark: 100 },
+    { subject: 'Defensa (DEF)', A: player.attributes?.defending || 70, fullMark: 100 },
+    { subject: 'Físico (PHY)', A: player.attributes?.physical || 70, fullMark: 100 },
+  ];
+
   return (
     <div className="page-container" style={{maxWidth: '1200px', margin: '0 auto'}}>
       {/* HEADER SECTION */}
       <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: '8px', padding: '1.5rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         <div style={{ width: '120px', height: '150px', background: '#000', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {/* Mock Silhouette */}
           <div style={{ width: '60px', height: '80px', background: '#333', borderRadius: '50% 50% 0 0', position: 'relative' }}>
              <div style={{ position: 'absolute', top: '-40px', left: '10px', width: '40px', height: '40px', background: '#333', borderRadius: '50%' }}></div>
           </div>
@@ -55,6 +63,7 @@ export function PlayerProfile() {
             <div>{player.bio?.height || 180} cm, {player.bio?.weight || 75} kg - {player.bio?.country || 'Desconocido'}</div>
             <div>Edad: {player.age}</div>
             <div>Contrato: ${(player.contract / 1000000).toFixed(2)}M/yr</div>
+            {player.isOnLoan && <div style={{ color: '#fbbf24', fontWeight: 'bold' }}>🔄 Jugador Cedido en préstamo</div>}
           </div>
         </div>
 
@@ -74,31 +83,47 @@ export function PlayerProfile() {
         </div>
       </div>
 
-      {/* RATINGS SECTION */}
-      <h3 style={{ borderBottom: '1px solid #333', paddingBottom: '0.5rem', color: '#e67e22' }}>Atributos</h3>
-      <div className="standings-content" style={{ overflowX: 'auto', marginBottom: '2rem' }}>
-        <table className="table-container bb-table">
-          <thead>
-            <tr>
-              <th>PAC</th>
-              <th>SHO</th>
-              <th>PAS</th>
-              <th>DRI</th>
-              <th>DEF</th>
-              <th>PHY</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{player.attributes?.pace || '-'}</td>
-              <td>{player.attributes?.shooting || '-'}</td>
-              <td>{player.attributes?.passing || '-'}</td>
-              <td>{player.attributes?.dribbling || '-'}</td>
-              <td>{player.attributes?.defending || '-'}</td>
-              <td>{player.attributes?.physical || '-'}</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* SPIDER CHART & ATTRIBUTES SECTION */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+        <div>
+          <h3 style={{ borderBottom: '1px solid #333', paddingBottom: '0.5rem', color: '#e67e22' }}>Atributos Principales</h3>
+          <div className="standings-content" style={{ overflowX: 'auto' }}>
+            <table className="table-container bb-table">
+              <thead>
+                <tr>
+                  <th>PAC</th>
+                  <th>SHO</th>
+                  <th>PAS</th>
+                  <th>DRI</th>
+                  <th>DEF</th>
+                  <th>PHY</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{player.attributes?.pace || '-'}</td>
+                  <td>{player.attributes?.shooting || '-'}</td>
+                  <td>{player.attributes?.passing || '-'}</td>
+                  <td>{player.attributes?.dribbling || '-'}</td>
+                  <td>{player.attributes?.defending || '-'}</td>
+                  <td>{player.attributes?.physical || '-'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="glass-panel" style={{ padding: '1rem', height: '260px' }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', color: '#38bdf8' }}>Perfil Táctico (Spider Chart)</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+              <PolarGrid stroke="#475569" />
+              <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={11} />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#475569" fontSize={9} />
+              <Radar name={player.name} dataKey="A" stroke="#38bdf8" fill="#38bdf8" fillOpacity={0.6} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* STATS SECTION */}

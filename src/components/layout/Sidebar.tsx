@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import './Sidebar.css';
 
@@ -25,7 +24,6 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/daily_schedule`} className="nav-item">Calendario Diario</Link>
           <Link to={`/l/${leagueId}/finances`} className="nav-item">Finanzas de Liga</Link>
           <Link to={`/l/${leagueId}/history`} className="nav-item">Historia</Link>
-          <Link to={`/l/${leagueId}/power_rankings`} className="nav-item">Power Rankings</Link>
           <Link to={`/l/${leagueId}/transactions`} className="nav-item">Traspasos</Link>
           <Link to={`/l/${leagueId}/notes`} className="nav-item">Notas</Link>
         </div>
@@ -36,6 +34,7 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           </div>
           <Link to={`/l/${leagueId}/roster`} className="nav-item">Plantilla</Link>
           <Link to={`/l/${leagueId}/tactics`} className="nav-item">Alineación</Link>
+          <Link to={`/l/${leagueId}/kit_creator`} className="nav-item">🎨 Creador de Camisetas</Link>
           <Link to={`/l/${leagueId}/youth_academy`} className="nav-item">Filial</Link>
           <Link to={`/l/${leagueId}/schedule`} className="nav-item">Calendario</Link>
           <Link to={`/l/${leagueId}/finances`} className="nav-item">Finanzas</Link>
@@ -47,6 +46,8 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <div className="nav-group-title">
             <span style={{fontSize:'8px', marginRight:'4px'}}>▼</span> JUGADORES
           </div>
+          <Link to={`/l/${leagueId}/transfermarkt`} className="nav-item" style={{color: '#38bdf8', fontWeight: 'bold'}}>🌐 Transfermarkt Live</Link>
+          <Link to={`/l/${leagueId}/scouting`} className="nav-item">🕵️ Red de Ojeadores</Link>
           <Link to={`/l/${leagueId}/free_agents`} className="nav-item">Agentes Libres</Link>
           <Link to={`/l/${leagueId}/trades`} className="nav-item">Transferencias</Link>
           <Link to={`/l/${leagueId}/compare_players`} className="nav-item">Comparar Jugadores</Link>

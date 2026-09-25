@@ -1,0 +1,235 @@
+.summary-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+/* Owner Letter Card */
+.owner-letter-card {
+  padding: 1.5rem 2rem;
+  border-radius: 16px;
+  display: flex;
+  gap: 1.8rem;
+  align-items: flex-start;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.owner-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.owner-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #38bdf8;
+  text-transform: uppercase;
+}
+
+.owner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.owner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.owner-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #f8fafc;
+}
+
+.owner-subtitle {
+  margin: 2px 0 0 0;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.eval-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eval-badge.excellent {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.eval-badge.good {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid #38bdf8;
+}
+
+.eval-badge.neutral {
+  background: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+  border: 1px solid #eab308;
+}
+
+.eval-badge.bad {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.owner-body-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  border-radius: 10px;
+  border-left: 3px solid #38bdf8;
+}
+
+.owner-stats-pills {
+  display: flex;
+  gap: 1.5rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+/* Awards Summary */
+.awards-summary-card {
+  padding: 1.5rem;
+  border-radius: 16px;
+}
+
+.awards-summary-card h3 {
+  margin: 0 0 1.2rem 0;
+  font-size: 1.1rem;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.awards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.2rem;
+}
+
+.award-box {
+  padding: 1.2rem 1rem;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.award-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.award-box strong {
+  font-size: 1.05rem;
+  color: #ffffff;
+}
+
+.award-box small {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.award-box.gold {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(161, 98, 7, 0.3) 100%);
+  border: 1px solid #eab308;
+  color: #eab308;
+}
+
+.award-box.silver {
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.15) 0%, rgba(148, 163, 184, 0.25) 100%);
+  border: 1px solid #cbd5e1;
+  color: #cbd5e1;
+}
+
+.award-box.blue {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(3, 105, 161, 0.3) 100%);
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+}
+
+.award-box.green {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(4, 120, 87, 0.3) 100%);
+  border: 1px solid #10b981;
+  color: #10b981;
+}
+
+.award-box.purple {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(126, 34, 206, 0.3) 100%);
+  border: 1px solid #a855f7;
+  color: #a855f7;
+}
+
+/* Action Card */
+.next-season-action-card {
+  padding: 1.5rem 2rem;
+  border-radius: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(30, 41, 59, 0.8) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.btn-start-next-season {
+  background: #10b981;
+  color: #ffffff;
+  border: none;
+  padding: 0.9rem 1.8rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-start-next-season:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+}
+
+.btn-start-next-season:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .owner-letter-card { flex-direction: column; }
+  .next-season-action-card { flex-direction: column; gap: 1rem; text-align: center; }
+}

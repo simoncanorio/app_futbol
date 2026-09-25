@@ -1,55 +1,133 @@
-.bracket-container {
+.playoffs-page {
   display: flex;
-  justify-content: space-around;
-  margin-top: 2rem;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.bracket-side {
-  width: 300px;
-}
-
-.bracket-title {
-  text-align: center;
-  font-size: 1.2rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 2px solid #444;
-  padding-bottom: 0.5rem;
-}
-
-.matchup {
-  background-color: #2b2b2b;
-  border: 1px solid #444;
-  border-radius: 4px;
-  margin-bottom: 1.5rem;
-  padding: 8px;
-}
-
-.matchup-team {
+.comp-banner {
+  padding: 1.5rem;
   display: flex;
   align-items: center;
-  padding: 4px 0;
+  gap: 1.5rem;
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.matchup-team .seed {
-  color: #888;
+.comp-banner h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.25rem;
+  color: #f8fafc;
+}
+
+.comp-banner p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #94a3b8;
+}
+
+.prize-badge {
+  margin-left: auto;
+  text-align: right;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+}
+
+.prize-badge span {
+  display: block;
   font-size: 0.75rem;
-  width: 20px;
+  color: #eab308;
 }
 
-.matchup-team .name {
-  flex-grow: 1;
-  color: #e67e22;
-  font-weight: 500;
+.prize-badge strong {
+  display: block;
+  font-size: 1.1rem;
+  color: #ffffff;
 }
 
-.matchup-team .score {
-  font-weight: bold;
-  color: #fff;
+.champions-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 1.5rem;
 }
 
-.best-of {
-  text-align: center;
+.league-phase-card, .bracket-card {
+  padding: 1.2rem;
+  border-radius: 16px;
+}
+
+.league-phase-card h3, .bracket-card h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.05rem;
+  color: #f8fafc;
+}
+
+.status-badge-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bracket-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.bracket-column h4 {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  margin: 0 0 0.8rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bracket-matchup {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bracket-matchup.final-matchup {
+  border-color: rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.06);
+}
+
+.matchup-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  color: #cbd5e1;
+}
+
+.matchup-row.winner {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.final-tag {
   font-size: 0.75rem;
-  color: #888;
-  margin-top: 8px;
+  color: #eab308;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+@media (max-width: 1024px) {
+  .champions-grid { grid-template-columns: 1fr; }
+  .bracket-wrapper { grid-template-columns: 1fr; }
 }

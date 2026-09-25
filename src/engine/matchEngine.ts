@@ -12,7 +12,7 @@ function pickWeighted(players: Player[], positions: string[]): Player | null {
   return pickRandom(players) || null;
 }
 
-export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: Team, week: number, type: 'league' | 'cup'): Promise<Match> {
+export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: Team, week: number, type: 'league' | 'cup' | 'continental'): Promise<Match> {
   let homeScore = 0;
   let awayScore = 0;
   const events: any[] = [];

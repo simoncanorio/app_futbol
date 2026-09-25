@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Play, ChevronDown, Home, Menu, Loader } from 'lucide-react';
 import { advanceWeek, getLeagueMaxWeeks } from '../../engine/gameLoop';
 import { db, type League } from '../../db/db';
@@ -14,6 +14,7 @@ interface TopNavbarProps {
 
 export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [playOpen, setPlayOpen] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [league, setLeague] = useState<League | null>(null);
@@ -24,7 +25,7 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
       db.leagues.get(leagueId).then(l => setLeague(l || null));
       getLeagueMaxWeeks(leagueId).then(w => setMaxWeeks(w));
     }
-  }, [leagueId]);
+  }, [leagueId, location.pathname]);
 
   const handleAdvance = async (weeks: number | string) => {
     if (!leagueId || !league) return;
@@ -36,7 +37,7 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
         weeksToAdvance = weeks;
       } else if (weeks === 'end_season') {
         const mw = await getLeagueMaxWeeks(leagueId);
-        weeksToAdvance = Math.max(0, mw - league.currentWeek);
+        weeksToAdvance = Math.max(0, (mw + 1) - league.currentWeek);
       } else if (weeks === 'start_cup') {
         const mw = await getLeagueMaxWeeks(leagueId);
         const cupStart = Math.floor(mw / 2);
@@ -75,28 +76,35 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
         
         {leagueId && (
           <div className="play-menu">
-            <button className="play-btn" onClick={() => setPlayOpen(!playOpen)} disabled={isSimulating}>
+            <button
+              className={`play-btn ${league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? 'season-end-btn' : ''}`}
+              onClick={() => {
+                if (league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks) {
+                  navigate(`/l/${leagueId}/season_summary`);
+                } else {
+                  setPlayOpen(!playOpen);
+                }
+              }}
+              disabled={isSimulating}
+              style={league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? { background: '#10b981', color: '#ffffff', fontWeight: 'bold' } : {}}
+            >
               {isSimulating ? (
                 <><Loader size={16} className="spinner" /> Simulando...</>
+              ) : league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? (
+                <><Play size={16} fill="currentColor" /> Avanzar a siguiente temporada</>
               ) : (
                 <><Play size={16} fill="currentColor" /> Play <ChevronDown size={14} /></>
               )}
             </button>
-            {playOpen && (
+            {playOpen && !(league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks) && (
               <div className="dropdown-menu">
-                {league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? (
-                  <button onClick={() => handleAdvance('next_season')} style={{background: '#10b981', color: 'white'}}>Avanzar a la siguiente temporada</button>
-                ) : (
-                  <>
-                    <button onClick={() => handleAdvance(1)}>Avanzar 1 Semana</button>
-                    <button onClick={() => handleAdvance('start_cup')}>Avanzar hasta Copa</button>
-                    <button onClick={() => handleAdvance('end_season')}>Avanzar hasta Fin de Temporada</button>
-                  </>
-                )}
+                <button onClick={() => handleAdvance(1)}>Avanzar 1 Semana</button>
+                <button onClick={() => handleAdvance('start_cup')}>Avanzar hasta Copa</button>
+                <button onClick={() => handleAdvance('end_season')}>Avanzar hasta Fin de Temporada</button>
               </div>
             )}
             <div className="status-text">
-              Temp {league?.season || 2026} - Jor. {league?.currentWeek || 1}
+              Temp {league?.season || 2026} - Jor. {league?.currentWeek && maxWeeks > 0 && league.currentWeek > maxWeeks ? 'FIN' : (league?.currentWeek || 1)}
             </div>
           </div>
         )}

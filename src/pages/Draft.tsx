@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, type Player, type League, type Team } from '../db/db';
+import { db, type Player, type League, type Team, getInitialPlayerStats } from '../db/db';
 
 export function Draft() {
   const { leagueId } = useParams();
@@ -49,7 +49,7 @@ export function Draft() {
         potential: 60 + Math.floor(Math.random() * 35), // 60-95
         position: positions[Math.floor(Math.random()*positions.length)],
         contract: 100000, // Salario mínimo canterano
-        stats: { goals: 0, assists: 0 },
+        stats: getInitialPlayerStats(),
         isDraftProspect: true,
         draftYear: year
       };

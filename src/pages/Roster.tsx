@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type League } from '../db/db';
+import { db, type Player } from '../db/db';
 
 export function Roster() {
   const { leagueId, teamId } = useParams();
@@ -50,13 +50,15 @@ export function Roster() {
   };
 
   const sortedPlayers = [...players].sort((a, b) => {
-    let aVal = a[sortConfig.key];
-    let bVal = b[sortConfig.key];
+    let aVal: any = a[sortConfig.key];
+    let bVal: any = b[sortConfig.key];
     if (sortConfig.key === 'stats') {
       aVal = (a.stats?.goals || 0) + (a.stats?.assists || 0);
       bVal = (b.stats?.goals || 0) + (b.stats?.assists || 0);
     }
     
+    if (aVal === undefined || aVal === null) return 1;
+    if (bVal === undefined || bVal === null) return -1;
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;

@@ -8,7 +8,9 @@ export interface League {
   difficulty: 'Normal' | 'Hard' | 'Insane';
   createdAt: number;
   lastPlayedAt: number;
-  userTeamId: number | null; 
+  userTeamId: number | null;
+  startPeriod?: 'preseason' | 'winter_window' | 'final_stretch';
+  managerReputation?: number;
 }
 
 export interface AdvancedPlayerStats {
@@ -135,6 +137,12 @@ export interface Player {
   isDraftProspect?: boolean;
   draftYear?: number;
   recruitedYear?: number;
+  
+  // Scouting & Loans
+  isScouted?: boolean;
+  isOnLoan?: boolean;
+  loanedFromTeamId?: number;
+  buyOptionFee?: number;
 }
 
 export interface Team {
@@ -159,6 +167,16 @@ export interface Team {
   healthExpense?: number;
   facilitiesExpense?: number;
   hype?: number;
+  mainSponsor?: {
+    name: string;
+    payoutPerSeason: number;
+    bonusPerWin: number;
+  };
+  kit?: {
+    primaryColor: string;
+    secondaryColor: string;
+    pattern: 'solid' | 'stripes' | 'hoop' | 'diagonal';
+  };
 }
 
 export interface Match {
@@ -170,7 +188,7 @@ export interface Match {
   awayScore: number;
   week: number;
   isPlayed: boolean;
-  type: 'league' | 'cup';
+  type: 'league' | 'cup' | 'continental';
   events?: {
     type: 'goal' | 'yellow_card' | 'red_card';
     playerId: number;
@@ -204,6 +222,8 @@ export interface Transaction {
   season: number;
   week: number;
   date: number;
+  sellOnFeePercent?: number;
+  buyOptionPrice?: number;
 }
 
 export interface Note {
@@ -215,6 +235,17 @@ export interface Note {
   createdAt: number;
 }
 
+export interface ScoutMission {
+  id?: number;
+  leagueId: number;
+  region: 'Sudamérica' | 'Europa' | 'África' | 'Asia';
+  scoutName: string;
+  durationWeeks: number;
+  startWeek: number;
+  isCompleted: boolean;
+  discoveredPlayerIds?: number[];
+}
+
 export class FootballDB extends Dexie {
   leagues!: Table<League, number>;
   players!: Table<Player, number>;
@@ -223,6 +254,7 @@ export class FootballDB extends Dexie {
   history!: Table<SeasonHistory, number>;
   transactions!: Table<Transaction, number>;
   notes!: Table<Note, number>;
+  scoutMissions!: Table<ScoutMission, number>;
 
   constructor() {
     super('FootballGM_DB_v2'); 
@@ -237,8 +269,8 @@ export class FootballDB extends Dexie {
       transactions: '++id, leagueId, season, fromTeamId, toTeamId',
       notes: '++id, leagueId, entityType, entityId'
     });
-    this.version(4).upgrade(tx => {
-      // Add defaults to existing players/teams if needed, or just let them be undefined
+    this.version(5).stores({
+      scoutMissions: '++id, leagueId, region, isCompleted'
     });
   }
 }
