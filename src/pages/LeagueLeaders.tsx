@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team } from '../db/db';
 
 export function LeagueLeaders() {
@@ -35,7 +35,11 @@ export function LeagueLeaders() {
             {sorted.map((p, idx) => (
               <tr key={p.id} style={{borderBottom: '1px solid #333', background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'}}>
                 <td style={{padding: '6px 4px', width: '20px', color: '#888'}}>{idx + 1}</td>
-                <td style={{padding: '6px 4px', fontWeight: 'bold', color: '#3b82f6'}}>{p.name}</td>
+                <td style={{padding: '6px 4px', fontWeight: 'bold'}}>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td style={{padding: '6px 4px', color: '#aaa'}}>{p.teamObj?.name.substring(0, 3).toUpperCase() || 'FA'}</td>
                 <td style={{padding: '6px 4px', color: '#aaa'}}>{p.position}</td>
                 <td style={{padding: '6px 4px', textAlign: 'right', fontWeight: 'bold'}}>

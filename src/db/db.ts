@@ -246,6 +246,21 @@ export interface ScoutMission {
   discoveredPlayerIds?: number[];
 }
 
+export interface GMHistoryEntry {
+  id?: number;
+  leagueId: number;
+  season: number;
+  teamId: number;
+  teamName: string;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  leaguePosition?: number;
+  titleWon?: string;
+}
+
 export class FootballDB extends Dexie {
   leagues!: Table<League, number>;
   players!: Table<Player, number>;
@@ -255,6 +270,7 @@ export class FootballDB extends Dexie {
   transactions!: Table<Transaction, number>;
   notes!: Table<Note, number>;
   scoutMissions!: Table<ScoutMission, number>;
+  gmHistory!: Table<GMHistoryEntry, number>;
 
   constructor() {
     super('FootballGM_DB_v2'); 
@@ -271,6 +287,9 @@ export class FootballDB extends Dexie {
     });
     this.version(5).stores({
       scoutMissions: '++id, leagueId, region, isCompleted'
+    });
+    this.version(6).stores({
+      gmHistory: '++id, leagueId, season, teamId'
     });
   }
 }

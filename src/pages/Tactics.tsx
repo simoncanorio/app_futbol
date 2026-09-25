@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Player, type Team } from '../db/db';
-import { Shield, Settings, Sliders, Award, CheckCircle, RefreshCw, Zap } from 'lucide-react';
+import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info } from 'lucide-react';
 import './Tactics.css';
 
 interface PitchSlot {
@@ -9,98 +9,134 @@ interface PitchSlot {
   top: string;
   left: string;
   label: string;
+  slotType: 'POR' | 'DEF' | 'MED' | 'DEL';
 }
 
 const FORMATIONS: Record<string, PitchSlot[]> = {
   '4-3-3': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD' },
-    { id: 'CM1', top: '45%', left: '30%', label: 'MC' },
-    { id: 'CDM', top: '50%', left: '50%', label: 'MCD' },
-    { id: 'CM2', top: '45%', left: '70%', label: 'MC' },
-    { id: 'LW', top: '25%', left: '20%', label: 'EI' },
-    { id: 'ST', top: '15%', left: '50%', label: 'DC' },
-    { id: 'RW', top: '25%', left: '80%', label: 'ED' },
+    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
+    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
+    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
+    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
+    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
+    { id: 'CM1', top: '45%', left: '30%', label: 'MC', slotType: 'MED' },
+    { id: 'CDM', top: '50%', left: '50%', label: 'MCD', slotType: 'MED' },
+    { id: 'CM2', top: '45%', left: '70%', label: 'MC', slotType: 'MED' },
+    { id: 'LW', top: '25%', left: '20%', label: 'EI', slotType: 'DEL' },
+    { id: 'ST', top: '15%', left: '50%', label: 'DC', slotType: 'DEL' },
+    { id: 'RW', top: '25%', left: '80%', label: 'ED', slotType: 'DEL' },
   ],
   '4-4-2': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD' },
-    { id: 'LM', top: '45%', left: '15%', label: 'MI' },
-    { id: 'CM1', top: '45%', left: '40%', label: 'MC' },
-    { id: 'CM2', top: '45%', left: '60%', label: 'MC' },
-    { id: 'RM', top: '45%', left: '85%', label: 'MD' },
-    { id: 'ST1', top: '18%', left: '38%', label: 'DC' },
-    { id: 'ST2', top: '18%', left: '62%', label: 'DC' },
+    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
+    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
+    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
+    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
+    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
+    { id: 'LM', top: '45%', left: '15%', label: 'MI', slotType: 'MED' },
+    { id: 'CM1', top: '45%', left: '40%', label: 'MC', slotType: 'MED' },
+    { id: 'CM2', top: '45%', left: '60%', label: 'MC', slotType: 'MED' },
+    { id: 'RM', top: '45%', left: '85%', label: 'MD', slotType: 'MED' },
+    { id: 'ST1', top: '18%', left: '38%', label: 'DC', slotType: 'DEL' },
+    { id: 'ST2', top: '18%', left: '62%', label: 'DC', slotType: 'DEL' },
   ],
   '4-2-3-1': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD' },
-    { id: 'CDM1', top: '52%', left: '38%', label: 'MCD' },
-    { id: 'CDM2', top: '52%', left: '62%', label: 'MCD' },
-    { id: 'LAM', top: '32%', left: '22%', label: 'MCO' },
-    { id: 'CAM', top: '30%', left: '50%', label: 'MCO' },
-    { id: 'RAM', top: '32%', left: '78%', label: 'MCO' },
-    { id: 'ST', top: '15%', left: '50%', label: 'DC' },
+    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
+    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
+    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
+    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
+    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
+    { id: 'CDM1', top: '52%', left: '38%', label: 'MCD', slotType: 'MED' },
+    { id: 'CDM2', top: '52%', left: '62%', label: 'MCD', slotType: 'MED' },
+    { id: 'LAM', top: '32%', left: '22%', label: 'MCO', slotType: 'MED' },
+    { id: 'CAM', top: '30%', left: '50%', label: 'MCO', slotType: 'MED' },
+    { id: 'RAM', top: '32%', left: '78%', label: 'MCO', slotType: 'MED' },
+    { id: 'ST', top: '15%', left: '50%', label: 'DC', slotType: 'DEL' },
   ],
   '3-5-2': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR' },
-    { id: 'CB1', top: '72%', left: '25%', label: 'DFC' },
-    { id: 'CB2', top: '74%', left: '50%', label: 'DFC' },
-    { id: 'CB3', top: '72%', left: '75%', label: 'DFC' },
-    { id: 'LWB', top: '45%', left: '12%', label: 'CAD' },
-    { id: 'CM1', top: '48%', left: '35%', label: 'MC' },
-    { id: 'CAM', top: '38%', left: '50%', label: 'MCO' },
-    { id: 'CM2', top: '48%', left: '65%', label: 'MC' },
-    { id: 'RWB', top: '45%', left: '88%', label: 'CAD' },
-    { id: 'ST1', top: '18%', left: '38%', label: 'DC' },
-    { id: 'ST2', top: '18%', left: '62%', label: 'DC' },
+    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
+    { id: 'CB1', top: '72%', left: '25%', label: 'DFC', slotType: 'DEF' },
+    { id: 'CB2', top: '74%', left: '50%', label: 'DFC', slotType: 'DEF' },
+    { id: 'CB3', top: '72%', left: '75%', label: 'DFC', slotType: 'DEF' },
+    { id: 'LWB', top: '45%', left: '12%', label: 'CAD', slotType: 'DEF' },
+    { id: 'CM1', top: '48%', left: '35%', label: 'MC', slotType: 'MED' },
+    { id: 'CAM', top: '38%', left: '50%', label: 'MCO', slotType: 'MED' },
+    { id: 'CM2', top: '48%', left: '65%', label: 'MC', slotType: 'MED' },
+    { id: 'RWB', top: '45%', left: '88%', label: 'CAD', slotType: 'DEF' },
+    { id: 'ST1', top: '18%', left: '38%', label: 'DC', slotType: 'DEL' },
+    { id: 'ST2', top: '18%', left: '62%', label: 'DC', slotType: 'DEL' },
   ]
 };
+
+export function getPositionalPenalty(playerPos: string, slotType: 'POR' | 'DEF' | 'MED' | 'DEL', slotLabel: string): number {
+  if (playerPos === slotType) {
+    // Specific position sub-check for strikers on wing
+    if (playerPos === 'DEL' && (slotLabel === 'EI' || slotLabel === 'ED')) return 4; // Minor penalty for pure ST on wing
+    return 0;
+  }
+  
+  if (playerPos === 'POR' || slotType === 'POR') return 40; // Extreme penalty for Goalkeeper out of net
+
+  if (playerPos === 'DEL') {
+    if (slotType === 'MED') return 10;
+    if (slotType === 'DEF') return 22;
+  }
+  if (playerPos === 'MED') {
+    if (slotType === 'DEL') return 6;
+    if (slotType === 'DEF') return 12;
+  }
+  if (playerPos === 'DEF') {
+    if (slotType === 'MED') return 8;
+    if (slotType === 'DEL') return 24;
+  }
+
+  return 10;
+}
 
 export interface TacticalStyle {
   name: string;
   description: string;
   pros: string;
   cons: string;
+  bestAgainst: string;
+  vulnerableTo: string;
   possessionBonus: number;
 }
 
 const TACTICAL_STYLES: TacticalStyle[] = [
   {
     name: 'Tiki-Taka (Posesión)',
-    description: 'Control de balón mediante pases cortos en triangulación y paciencia.',
-    pros: 'Alta posesión (+15%), reduce ocasiones rivales.',
-    cons: 'Vulnerable a contraataques veloces.',
+    description: 'Control de balón mediante pases cortos en triangulación y paciencia infinita.',
+    pros: 'Alta posesión (+15%), desgasta al rival y minimiza sus llegadas.',
+    cons: 'Vulnerable a contraataques verticales veloces.',
+    bestAgainst: 'Autobús (Catenaccio)',
+    vulnerableTo: 'Gegenpressing (Presión Alta)',
     possessionBonus: 15
   },
   {
     name: 'Gegenpressing (Presión Alta)',
-    description: 'Presión asfixiante inmediata tras perder el balón para forzar errores rivales.',
-    pros: 'Recuperaciones rápidas en campo rival y ocasiones claras.',
-    cons: 'Mayor desgaste físico de los jugadores.',
+    description: 'Presión asfixiante inmediata tras pérdida para ahogar la salida rival.',
+    pros: 'Recuperaciones rápidas en campo contrario y ocasiones muy claras.',
+    cons: 'Exige un físico impecable. Deja espacios a la espalda.',
+    bestAgainst: 'Tiki-Taka (Posesión)',
+    vulnerableTo: 'Contraataque Veloz',
     possessionBonus: 5
   },
   {
     name: 'Contraataque Veloz',
-    description: 'Bloque defensivo compacto y transiciones vertiginosas por bandas.',
-    pros: 'Letal con delanteros veloces contra defensas adelantadas.',
-    cons: 'Menor posesión de balón (40%).',
+    description: 'Bloque defensivo replegado y salidas fulgurantes al espacio.',
+    pros: 'Letal con atacantes veloces contra líneas defensivas adelantadas.',
+    cons: 'Poca posesión de balón (35-40%).',
+    bestAgainst: 'Gegenpressing (Presión Alta)',
+    vulnerableTo: 'Autobús (Catenaccio)',
     possessionBonus: -10
   },
   {
     name: 'Autobús (Catenaccio)',
-    description: 'Defensa férrea dentro del área propia minimizando espacios.',
-    pros: 'Excelente para mantener ventajas o empates contra equipos superiores.',
-    cons: 'Casi nula presencia ofensiva.',
+    description: 'Muralla defensiva en área propia sacrificando la posesión.',
+    pros: 'Cierra todos los caminos al gol en partidos decisivos.',
+    cons: 'Genera muy poco peligro en ataque.',
+    bestAgainst: 'Contraataque Veloz',
+    vulnerableTo: 'Tiki-Taka (Posesión)',
     possessionBonus: -20
   }
 ];
@@ -146,8 +182,22 @@ export function Tactics() {
     load();
   }, [leagueId]);
 
+  const currentSlots = FORMATIONS[selectedFormation] || FORMATIONS['4-3-3'];
   const starters = players.filter(p => p.lineupStatus === 'starter');
   const bench = players.filter(p => p.lineupStatus !== 'starter');
+
+  // Calculate effective team overall taking positional penalties into account (Task 5)
+  let totalEffectiveOvr = 0;
+  let starterCount = 0;
+
+  starters.forEach(p => {
+    const slot = currentSlots.find(s => s.id === p.pitchPosition);
+    const penalty = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label) : 0;
+    totalEffectiveOvr += Math.max(35, p.overall - penalty);
+    starterCount++;
+  });
+
+  const effectiveTeamOvr = starterCount > 0 ? Math.round(totalEffectiveOvr / starterCount) : (team?.overall || 75);
 
   const handleDragStart = (e: React.DragEvent, playerId: number) => {
     setDraggedPlayerId(playerId);
@@ -194,19 +244,30 @@ export function Tactics() {
     setDraggedPlayerId(null);
   };
 
-  const currentSlots = FORMATIONS[selectedFormation] || FORMATIONS['4-3-3'];
+  const handleSaveTacticalStyle = async (styleName: string) => {
+    setSelectedStyle(styleName);
+    if (team) {
+      team.overall = effectiveTeamOvr;
+      await db.teams.put(team);
+    }
+  };
 
   return (
     <div className="page-container tactics-page">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1>Sistema Táctico & Pizarra de Estrategia</h1>
-          <p style={{ color: '#94a3b8', margin: 0 }}>Configura la alineación titular, esquemas tácticos, mentalidad y lanzadores de balón parado.</p>
+          <p style={{ color: '#94a3b8', margin: 0 }}>Configura la alineación titular, esquemas tácticos, penalizaciones por posición y lanzadores.</p>
         </div>
         {team && (
           <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
             <Shield color="#38bdf8" size={20} />
-            <span>OVR Promedio: <strong style={{ color: '#10b981' }}>{team.overall}</strong></span>
+            <div>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Media Ajustada Once:</span>
+              <strong style={{ color: effectiveTeamOvr < team.overall ? '#ef4444' : '#10b981', fontSize: '1.1rem' }}>
+                {effectiveTeamOvr} OVR {effectiveTeamOvr < team.overall ? `( Penalización Táctica )` : ''}
+              </strong>
+            </div>
           </div>
         )}
       </div>
@@ -217,13 +278,13 @@ export function Tactics() {
           className={`tm-tab ${activeTab === 'pitch' ? 'active' : ''}`}
           onClick={() => setActiveTab('pitch')}
         >
-          <Sliders size={16} /> Pizarra & Formación
+          <Sliders size={16} /> Alineación & Campo (Penalizaciones)
         </button>
         <button
           className={`tm-tab ${activeTab === 'styles' ? 'active' : ''}`}
           onClick={() => setActiveTab('styles')}
         >
-          <Zap size={16} /> Estilos Tácticos & Instrucciones
+          <Zap size={16} /> Estilos Tácticos & Matriz de Contras
         </button>
         <button
           className={`tm-tab ${activeTab === 'roles' ? 'active' : ''}`}
@@ -253,6 +314,9 @@ export function Tactics() {
             <div className="football-pitch">
               {currentSlots.map(slot => {
                 const occupant = starters.find(p => p.pitchPosition === slot.id);
+                const penalty = occupant ? getPositionalPenalty(occupant.position, slot.slotType, slot.label) : 0;
+                const effectiveOvr = occupant ? Math.max(35, occupant.overall - penalty) : 0;
+
                 return (
                   <div
                     key={slot.id}
@@ -264,12 +328,16 @@ export function Tactics() {
                     <div className="slot-label">{slot.label}</div>
                     {occupant ? (
                       <div
-                        className="player-token"
+                        className={`player-token ${penalty > 0 ? 'out-of-position' : ''}`}
                         draggable
                         onDragStart={e => handleDragStart(e, occupant.id!)}
                       >
-                        <div className="token-ovr">{occupant.overall}</div>
+                        <div className="token-ovr">
+                          {effectiveOvr}
+                          {penalty > 0 && <AlertTriangle size={10} color="#ef4444" style={{ marginLeft: 2 }} />}
+                        </div>
                         <div className="token-name">{occupant.name.split(' ').pop()}</div>
+                        {penalty > 0 && <span className="penalty-tag">-{penalty}</span>}
                       </div>
                     ) : (
                       <div className="slot-empty">+ Arrastrar</div>
@@ -334,13 +402,19 @@ export function Tactics() {
               <div
                 key={st.name}
                 className={`style-card glass-panel ${selectedStyle === st.name ? 'selected' : ''}`}
-                onClick={() => setSelectedStyle(st.name)}
+                onClick={() => handleSaveTacticalStyle(st.name)}
               >
                 <div className="style-header">
                   <h3>{st.name}</h3>
                   {selectedStyle === st.name && <CheckCircle color="#10b981" size={20} />}
                 </div>
                 <p className="style-desc">{st.description}</p>
+                
+                <div className="style-matrix-box">
+                  <span className="matrix-item beat">⚡ Efectivo contra: <strong>{st.bestAgainst}</strong></span>
+                  <span className="matrix-item weak">⚠️ Vulnerable ante: <strong>{st.vulnerableTo}</strong></span>
+                </div>
+
                 <div className="style-pros-cons">
                   <span className="pro">✔️ {st.pros}</span>
                   <span className="con">⚠️ {st.cons}</span>

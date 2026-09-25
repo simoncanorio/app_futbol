@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player } from '../db/db';
 
 export function YouthAcademy() {
@@ -55,7 +55,11 @@ export function YouthAcademy() {
           <tbody>
             {youthPlayers.map(p => (
               <tr key={p.id}>
-                <td style={{fontWeight: 'bold', color: '#4ade80'}}>{p.name}</td>
+                <td style={{fontWeight: 'bold'}}>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#4ade80', textDecoration: 'none'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>

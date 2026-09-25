@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player } from '../db/db';
 
 export function WatchList() {
@@ -52,7 +52,11 @@ export function WatchList() {
                 <td style={{textAlign: 'center', cursor: 'pointer'}} onClick={() => toggleWatch(p)}>
                   <span style={{color: '#e67e22', fontSize: '18px'}}>★</span>
                 </td>
-                <td style={{fontWeight: 'bold', color: '#3b82f6'}}>{p.name}</td>
+                <td style={{fontWeight: 'bold'}}>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>

@@ -103,7 +103,11 @@ export function FreeAgents() {
                 <td style={{textAlign: 'center', cursor: 'pointer'}} onClick={() => toggleWatch(p)}>
                   <span style={{color: p.isWatched ? '#e67e22' : '#555', fontSize: '18px'}}>★</span>
                 </td>
-                <td style={{fontWeight: 'bold', color: '#3b82f6'}}>{p.name}</td>
+                <td style={{fontWeight: 'bold'}}>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>

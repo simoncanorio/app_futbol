@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League } from '../db/db';
-import { DollarSign, ShieldAlert, ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
+import { DollarSign, ShieldAlert, ArrowLeftRight, CheckCircle2, XCircle, Star } from 'lucide-react';
 
 export function Trades() {
   const { leagueId } = useParams();
@@ -10,6 +10,12 @@ export function Trades() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | ''>('');
   const [roster, setRoster] = useState<Player[]>([]);
+
+  const toggleWatch = async (p: Player) => {
+    p.isWatched = !p.isWatched;
+    await db.players.put(p);
+    setRoster([...roster]);
+  };
   
   // Negotiation Modal
   const [negotiatingPlayer, setNegotiatingPlayer] = useState<Player | null>(null);
@@ -184,6 +190,7 @@ export function Trades() {
           <table className="table-container bb-table">
             <thead>
               <tr>
+                <th title="Preseleccionar / Seguir">★</th>
                 <th>Pos</th>
                 <th>Nombre</th>
                 <th>Edad</th>
@@ -196,8 +203,15 @@ export function Trades() {
             <tbody>
               {roster.map(p => (
                 <tr key={p.id}>
+                  <td style={{ textAlign: 'center', cursor: 'pointer', width: '30px' }} onClick={() => toggleWatch(p)}>
+                    <span style={{ color: p.isWatched ? '#f59e0b' : '#475569', fontSize: '18px' }}>★</span>
+                  </td>
                   <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
-                  <td style={{ fontWeight: 'bold', color: '#ffffff' }}>{p.name}</td>
+                  <td style={{ fontWeight: 'bold' }}>
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                      {p.name}
+                    </Link>
+                  </td>
                   <td>{p.age}</td>
                   <td><strong>{p.overall}</strong></td>
                   <td>{p.potential}</td>
@@ -210,7 +224,7 @@ export function Trades() {
                 </tr>
               ))}
               {roster.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>Sin jugadores disponibles.</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Sin jugadores disponibles.</td></tr>
               )}
             </tbody>
           </table>

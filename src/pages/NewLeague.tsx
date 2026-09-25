@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createNewLeague, createRealLeagueFromTransfermarkt, teamNames } from '../db/generators';
-import { Globe, Cpu, Calendar, Sun, Snowflake, Flame, Star } from 'lucide-react';
+import { createNewLeague, createRealLeagueFromTransfermarkt, espTeams, engTeams } from '../db/generators';
+import { tmService } from '../services/transfermarkt';
+import { OFFLINE_CLUBS } from '../services/transfermarktData';
+import { Globe, Cpu, Calendar, Sun, Snowflake, Flame, Star, Shield, CheckCircle } from 'lucide-react';
 import './NewLeague.css';
 
 export function NewLeague() {
@@ -9,12 +11,13 @@ export function NewLeague() {
   const [mode, setMode] = useState<'procedural' | 'transfermarkt'>('transfermarkt');
   const [leagueName, setLeagueName] = useState('LaLiga EA Sports');
   const [difficulty, setDifficulty] = useState<'Normal' | 'Hard' | 'Insane'>('Normal');
-  const [teamIndex, setTeamIndex] = useState<number>(-1);
+  const [selectedTeamIndex, setSelectedTeamIndex] = useState<number>(0);
 
   // Transfermarkt & Era Selection
   const [competitionId, setCompetitionId] = useState('ES1');
   const [startYear, setStartYear] = useState<number>(2026);
   const [customYearInput, setCustomYearInput] = useState('2026');
+  const [availableClubs, setAvailableClubs] = useState<{ id: string; name: string }[]>([]);
 
   // Start Period Selection
   const [startPeriod, setStartPeriod] = useState<'preseason' | 'winter_window' | 'final_stretch'>('preseason');
@@ -38,11 +41,36 @@ export function NewLeague() {
     { year: 2006, label: '💎 2006/07 (Messi Joven / Ronaldinho)', desc: 'Messi con 19 años en el Barça, Ronaldinho, Henry, Rooney' }
   ];
 
+  useEffect(() => {
+    async function fetchClubs() {
+      if (mode === 'transfermarkt') {
+        try {
+          const res = await tmService.getCompetitionClubs(competitionId, String(startYear));
+          if (res.clubs && res.clubs.length > 0) {
+            setAvailableClubs(res.clubs);
+            setSelectedTeamIndex(0);
+            return;
+          }
+        } catch {
+          // Fallback
+        }
+        const filtered = OFFLINE_CLUBS.filter(c => competitionId === 'ES1' ? c.country === 'España' : c.country === 'Inglaterra');
+        setAvailableClubs(filtered.map(c => ({ id: c.id, name: c.name })));
+        setSelectedTeamIndex(0);
+      } else {
+        const procedural = [...espTeams, ...engTeams].map((name, i) => ({ id: String(i), name }));
+        setAvailableClubs(procedural);
+        setSelectedTeamIndex(0);
+      }
+    }
+    fetchClubs();
+  }, [competitionId, startYear, mode]);
+
   const handleCreate = async () => {
     setIsGenerating(true);
     try {
       if (mode === 'procedural') {
-        const id = await createNewLeague(leagueName, difficulty, teamIndex, startYear, startPeriod);
+        const id = await createNewLeague(leagueName, difficulty, selectedTeamIndex, startYear, startPeriod);
         navigate(`/l/${id}`);
       } else {
         const selectedComp = competitionsList.find(c => c.id === competitionId);
@@ -53,6 +81,7 @@ export function NewLeague() {
           competitionId,
           startYear,
           startPeriod,
+          selectedTeamIndex,
           (msg) => setStatusMsg(msg)
         );
         navigate(`/l/${id}`);
@@ -69,14 +98,14 @@ export function NewLeague() {
     <div className="new-league-page">
       <div className="nl-header">
         <h1>Nueva Liga de Fútbol Histórica o Actual</h1>
-        <p>Elige la era histórica, el periodo de inicio de la temporada y el formato de datos.</p>
+        <p>Elige tu equipo a dirigir, la era histórica, el periodo de inicio y la dificultad.</p>
       </div>
 
       {/* Mode Selector */}
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', justifyContent: 'center' }}>
         <button
           className={`tm-tab ${mode === 'transfermarkt' ? 'active' : ''}`}
-          onClick={() => { setMode('transfermarkt'); setLeagueName('LaLiga Santander'); }}
+          onClick={() => { setMode('transfermarkt'); setLeagueName('LaLiga EA Sports'); }}
           style={{ padding: '0.8rem 1.5rem', fontSize: '1rem' }}
         >
           <Globe size={18} /> Real Sync (Transfermarkt API)
@@ -102,6 +131,69 @@ export function NewLeague() {
             />
           </div>
 
+          {mode === 'transfermarkt' && (
+            <div className="form-group">
+              <label>Competición Real</label>
+              <select
+                className="bb-select"
+                value={competitionId}
+                onChange={e => {
+                  setCompetitionId(e.target.value);
+                  const found = competitionsList.find(c => c.id === e.target.value);
+                  if (found) setLeagueName(found.name);
+                }}
+              >
+                {competitionsList.map(comp => (
+                  <option key={comp.id} value={comp.id}>{comp.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Team Selection Picker Grid (Task 2) */}
+          <div className="form-group">
+            <label><Shield size={16} /> Elige tu Equipo para Entrenar ({availableClubs.length} Clubes)</label>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+              gap: '0.8rem',
+              marginTop: '0.6rem',
+              maxHeight: '260px',
+              overflowY: 'auto',
+              padding: '0.5rem',
+              background: 'rgba(15, 23, 42, 0.6)',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              {availableClubs.map((club, idx) => {
+                const isSelected = selectedTeamIndex === idx;
+                return (
+                  <div
+                    key={club.id || idx}
+                    onClick={() => setSelectedTeamIndex(idx)}
+                    style={{
+                      padding: '0.7rem',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      background: isSelected ? 'rgba(56, 189, 248, 0.25)' : 'rgba(30, 41, 59, 0.5)',
+                      border: `1px solid ${isSelected ? '#38bdf8' : 'rgba(255,255,255,0.06)'}`,
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Shield size={18} color={isSelected ? '#38bdf8' : '#94a3b8'} />
+                    <span style={{ fontSize: '0.88rem', fontWeight: isSelected ? 800 : 600, color: isSelected ? '#ffffff' : '#cbd5e1', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {club.name}
+                    </span>
+                    {isSelected && <CheckCircle size={16} color="#38bdf8" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Era / Season Year Selection */}
           <div className="form-group">
             <label><Calendar size={16} /> Selecciona la Era / Temporada Histórica</label>
@@ -122,22 +214,6 @@ export function NewLeague() {
                   <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{era.desc}</div>
                 </div>
               ))}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '0.8rem' }}>
-              <span style={{ fontSize: '0.88rem', color: '#cbd5e1' }}>Año personalizado:</span>
-              <input
-                type="number"
-                value={customYearInput}
-                onChange={e => {
-                  setCustomYearInput(e.target.value);
-                  const y = Number(e.target.value);
-                  if (y >= 1990 && y <= 2026) setStartYear(y);
-                }}
-                className="bb-input"
-                style={{ width: '100px' }}
-                placeholder="2011"
-              />
             </div>
           </div>
 
@@ -195,42 +271,6 @@ export function NewLeague() {
             </div>
           </div>
 
-          {mode === 'transfermarkt' ? (
-            <div className="form-group">
-              <label>Competición Real</label>
-              <select
-                className="bb-select"
-                value={competitionId}
-                onChange={e => {
-                  setCompetitionId(e.target.value);
-                  const found = competitionsList.find(c => c.id === e.target.value);
-                  if (found) setLeagueName(found.name);
-                }}
-              >
-                {competitionsList.map(comp => (
-                  <option key={comp.id} value={comp.id}>{comp.name}</option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div className="form-group">
-              <label>Elige tu equipo</label>
-              <div className="select-row">
-                <select 
-                  className="bb-select" 
-                  value={teamIndex} 
-                  onChange={e => setTeamIndex(Number(e.target.value))}
-                >
-                  <option value={-1}>Aleatorio (Cualquiera)</option>
-                  {teamNames.map((name, idx) => (
-                    <option key={idx} value={idx}>{name}</option>
-                  ))}
-                </select>
-                <button className="random-btn" onClick={() => setTeamIndex(-1)}>Random</button>
-              </div>
-            </div>
-          )}
-
           <div className="form-group">
             <label>Dificultad</label>
             <select 
@@ -252,19 +292,19 @@ export function NewLeague() {
 
           <div className="nl-actions">
             <button className="create-btn" onClick={handleCreate} disabled={isGenerating}>
-              {isGenerating ? 'Creando...' : `Iniciar Liga (${startYear})`}
+              {isGenerating ? 'Creando...' : `Iniciar Liga con ${availableClubs[selectedTeamIndex]?.name || 'mi equipo'} (${startYear})`}
             </button>
           </div>
         </div>
 
         <div className="nl-info">
           <div className="info-box">
-            <h3><Calendar size={16} /> Eras Históricas Reales</h3>
-            <p>Puedes empezar en 2006 con Lionel Messi recién ascendido de la cantera del Barcelona o en 2020 en su última temporada blaugrana.</p>
+            <h3><Shield size={16} /> Elección Directa de Club</h3>
+            <p>Selecciona exactamente qué equipo deseas dirigir desde el primer día con su presupuesto e historial oficial.</p>
           </div>
           <div className="info-box">
-            <h3><Snowflake size={16} /> Periodos de la Temporada</h3>
-            <p>Empieza en pretemporada, o salta directo al mercado de invierno en enero con presupuestos renovados o al tramo final a definir la liga.</p>
+            <h3><Calendar size={16} /> Eras Históricas Reales</h3>
+            <p>Puedes empezar en 2006 con Lionel Messi recién ascendido de la cantera del Barcelona o en 2020 en su última temporada blaugrana.</p>
           </div>
           <div className="info-box">
             <h3><Globe size={16} /> Transfermarkt Historical Sync</h3>

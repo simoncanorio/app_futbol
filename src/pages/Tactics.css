@@ -68,21 +68,37 @@
   border-radius: 6px;
 }
 
-.player-token {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
-  border: 2px solid #ffffff;
+.player-token.out-of-position {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  border-color: #ef4444;
+}
+
+.penalty-tag {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 1px 4px;
+  border-radius: 6px;
+  border: 1px solid #ffffff;
+}
+
+.style-matrix-box {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  cursor: grab;
-
-  &:hover { transform: scale(1.1); }
+  gap: 4px;
+  margin-bottom: 0.8rem;
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.6rem;
+  border-radius: 8px;
 }
+
+.matrix-item.beat { color: #10b981; }
+.matrix-item.weak { color: #ef4444; }
 
 .token-ovr {
   font-size: 0.82rem;

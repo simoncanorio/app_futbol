@@ -53,7 +53,7 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/compare_players`} className="nav-item">Comparar Jugadores</Link>
           <Link to={`/l/${leagueId}/watch_list`} className="nav-item">Preselección</Link>
           <Link to={`/l/${leagueId}/hall_of_fame`} className="nav-item">Salón de la Fama</Link>
-          <Link to={`/l/${leagueId}/draft`} className="nav-item">Draft de Canteranos</Link>
+          <Link to={`/l/${leagueId}/draft`} className="nav-item">Canteranos</Link>
         </div>
 
         <div className="nav-group">

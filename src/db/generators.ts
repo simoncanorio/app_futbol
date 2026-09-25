@@ -143,6 +143,7 @@ export async function createRealLeagueFromTransfermarkt(
   competitionId: string,
   startYear: number = 2026,
   startPeriod: 'preseason' | 'winter_window' | 'final_stretch' = 'preseason',
+  userTeamIndex: number = -1,
   onProgress?: (msg: string) => void
 ): Promise<number> {
   let initialWeek = 1;
@@ -182,7 +183,7 @@ export async function createRealLeagueFromTransfermarkt(
       const pop = randomInt(1000000, 15000000);
       const teamId = await db.teams.add({
         leagueId,
-        domesticLeague: compData.name || 'Real League',
+        domesticLeague: compData.name || 'LaLiga',
         name: club.name,
         overall: 75,
         wins: startPeriod === 'preseason' ? 0 : randomInt(4, 14),
@@ -196,7 +197,7 @@ export async function createRealLeagueFromTransfermarkt(
         ticketPrice: randomInt(40, 120),
         revenue: 0,
         profit: 0,
-        kit: { primaryColor: '#10b981', secondaryColor: '#ffffff', pattern: 'solid' as const }
+        kit: { primaryColor: i % 2 === 0 ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' as const }
       }) as number;
 
       createdTeamIds.push(teamId);
@@ -243,36 +244,38 @@ export async function createRealLeagueFromTransfermarkt(
             }
           });
         }
-      } else {
-        const positions = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'MED', 'DEL'];
-        for (let j = 0; j < positions.length; j++) {
-          const ovr = randomInt(65, 84);
-          totalOvr += ovr;
-          dbPlayers.push({
-            leagueId,
-            teamId,
-            name: randomName(),
-            age: randomInt(18, 32),
-            overall: ovr,
-            potential: Math.min(99, ovr + randomInt(0, 10)),
-            position: positions[j],
-            contract: randomInt(1000000, 5000000),
-            stats: getInitialPlayerStats(),
-            attributes: {
-              pace: randomInt(50, 90),
-              shooting: randomInt(40, 90),
-              passing: randomInt(50, 90),
-              dribbling: randomInt(50, 90),
-              defending: randomInt(40, 90),
-              physical: randomInt(50, 90)
-            },
-            bio: {
-              height: randomInt(170, 190),
-              weight: randomInt(65, 85),
-              country: countries[Math.floor(Math.random() * countries.length)]
-            }
-          });
-        }
+      }
+
+      // Fill remaining squad up to 20 players if squad < 20
+      const positions = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
+      while (dbPlayers.length < 20) {
+        const posIndex = dbPlayers.length;
+        const ovr = randomInt(68, 85);
+        totalOvr += ovr;
+        dbPlayers.push({
+          leagueId,
+          teamId,
+          name: randomName(),
+          age: randomInt(18, 32),
+          overall: ovr,
+          potential: Math.min(99, ovr + randomInt(0, 10)),
+          position: positions[posIndex % positions.length],
+          contract: randomInt(1000000, 5000000),
+          stats: getInitialPlayerStats(),
+          attributes: {
+            pace: randomInt(50, 90),
+            shooting: randomInt(40, 90),
+            passing: randomInt(50, 90),
+            dribbling: randomInt(50, 90),
+            defending: randomInt(40, 90),
+            physical: randomInt(50, 90)
+          },
+          bio: {
+            height: randomInt(170, 190),
+            weight: randomInt(65, 85),
+            country: countries[Math.floor(Math.random() * countries.length)]
+          }
+        });
       }
 
       await db.players.bulkAdd(dbPlayers);
@@ -281,8 +284,11 @@ export async function createRealLeagueFromTransfermarkt(
       await db.teams.update(teamId, { overall: avgOvr });
     }
 
-    const randomTeamId = createdTeamIds[Math.floor(Math.random() * createdTeamIds.length)];
-    await db.leagues.update(leagueId, { userTeamId: randomTeamId });
+    const selectedTeamId = userTeamIndex >= 0 && userTeamIndex < createdTeamIds.length
+      ? createdTeamIds[userTeamIndex]
+      : createdTeamIds[0];
+
+    await db.leagues.update(leagueId, { userTeamId: selectedTeamId });
 
     // Generate 38 matchdays double round-robin schedule
     const { generateLeagueFixtures } = await import('../engine/fixtureGenerator');

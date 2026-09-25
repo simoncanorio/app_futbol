@@ -116,6 +116,32 @@ export async function startNextSeason(leagueId: number) {
 
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
 
+  // Record GM History for user team before resetting
+  if (league.userTeamId) {
+    const userTeam = allTeams.find(t => t.id === league.userTeamId);
+    if (userTeam) {
+      // Find rank among same domestic league teams
+      const domTeams = allTeams.filter(t => t.domesticLeague === userTeam.domesticLeague);
+      domTeams.sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
+      const pos = domTeams.findIndex(t => t.id === userTeam.id) + 1;
+      const isChamp = pos === 1;
+
+      await db.gmHistory.add({
+        leagueId: league.id!,
+        season: league.season,
+        teamId: userTeam.id!,
+        teamName: userTeam.name,
+        wins: userTeam.wins,
+        draws: userTeam.draws,
+        losses: userTeam.losses,
+        goalsFor: userTeam.goalsFor,
+        goalsAgainst: userTeam.goalsAgainst,
+        leaguePosition: pos > 0 ? pos : undefined,
+        titleWon: isChamp ? userTeam.domesticLeague : undefined
+      });
+    }
+  }
+
   // 1. Reset team W-D-L and goals stats
   for (const t of allTeams) {
     t.wins = 0;

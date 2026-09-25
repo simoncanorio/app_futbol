@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type League, type Team, getInitialPlayerStats } from '../db/db';
 
 export function Draft() {
@@ -83,7 +83,7 @@ export function Draft() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Draft de Canteranos (Undrafted Players)</h1>
+        <h1>Canteranos (Promesas Libres)</h1>
       </div>
       
       <p style={{color: '#ccc', marginBottom: '2rem'}}>
@@ -107,7 +107,11 @@ export function Draft() {
             {prospects.map((p, index) => (
               <tr key={p.id}>
                 <td style={{color: '#888'}}>{index + 1}</td>
-                <td style={{fontWeight: 'bold', color: '#e67e22'}}>{p.name}</td>
+                <td style={{fontWeight: 'bold'}}>
+                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#e67e22', textDecoration: 'none'}}>
+                    {p.name}
+                  </Link>
+                </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>

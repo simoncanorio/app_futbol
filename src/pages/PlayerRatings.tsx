@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League } from '../db/db';
 
 export function PlayerRatings() {
@@ -67,7 +67,11 @@ export function PlayerRatings() {
               const isMyTeam = league && p.teamId === league.userTeamId;
               return (
                 <tr key={p.id}>
-                  <td style={{fontWeight: 'bold', color: isMyTeam ? '#3b82f6' : '#e67e22'}}>{p.name}</td>
+                  <td style={{fontWeight: 'bold'}}>
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: isMyTeam ? '#3b82f6' : '#e67e22', textDecoration: 'none'}}>
+                      {p.name}
+                    </Link>
+                  </td>
                   <td>{p.position}</td>
                   <td>{p.teamObj?.name.substring(0,3).toUpperCase() || 'FA'}</td>
                   <td>{p.age}</td>

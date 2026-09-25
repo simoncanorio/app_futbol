@@ -150,7 +150,7 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
               <Link to={`/l/${leagueId}/compare_players`}>Comparar Jugadores</Link>
               <Link to={`/l/${leagueId}/watch_list`}>Preselección</Link>
               <Link to={`/l/${leagueId}/hall_of_fame`}>Salón de la Fama</Link>
-              <Link to={`/l/${leagueId}/draft`}>Draft de Canteranos</Link>
+              <Link to={`/l/${leagueId}/draft`}>Canteranos</Link>
             </div>
           </div>
           <div className="nav-dropdown">
