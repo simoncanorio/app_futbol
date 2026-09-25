@@ -1,4 +1,5 @@
 import { db, type Team, type Match, type Player } from '../db/db';
+import { calculateTeamChemistry } from '../utils/chemistryUtils';
 
 // Helper to get a random item from array
 function pickRandom<T>(arr: T[]): T {
@@ -43,6 +44,9 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
   const homeLineup = getLineup(homePlayers);
   const awayLineup = getLineup(awayPlayers);
   
+  const homeChem = calculateTeamChemistry(homeLineup, homeTeam).score;
+  const awayChem = calculateTeamChemistry(awayLineup, awayTeam).score;
+
   for (const p of [...homeLineup, ...awayLineup]) {
     p.stats.gamesPlayed++;
     p.stats.minutesPlayed += 90; // simplified
@@ -61,6 +65,8 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
     const defendingTeam = getOpponent(attackingTeam);
     const atkLineup = getLineupByTeam(attackingTeam);
     const defLineup = getLineupByTeam(defendingTeam);
+    const atkChem = attackingTeam.id === homeTeam.id ? homeChem : awayChem;
+    const chemBonus = (atkChem - 50) * 0.1;
 
     const atkPlayer = pickRandom(atkLineup.filter(p => p.position !== 'POR')) || atkLineup[0];
     const defPlayer = pickRandom(defLineup.filter(p => p.position !== 'POR')) || defLineup[0];
@@ -113,7 +119,7 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
         else atkPlayer.stats.oppHalfPassesAttempted++;
         
         // Pass success depends on passing vs opponent interception
-        const passRoll = Math.random() * 100 + (atkAtts.passing * 0.5) + passBonus;
+        const passRoll = Math.random() * 100 + (atkAtts.passing * 0.5) + passBonus + chemBonus;
         const defRoll = Math.random() * 100 + (defAtts.defending * 0.3) + defBonus;
         
         if (passRoll > defRoll) {

@@ -3,6 +3,7 @@ import { simulateMatch } from './matchEngine';
 import { generateLeagueFixtures } from './fixtureGenerator';
 import { processAITransfers } from './aiTransfers';
 import { autoSelectLineupForTeam, checkLineupReady } from '../utils/lineupUtils';
+import { calculateTeamChemistry } from '../utils/chemistryUtils';
 
 export async function getLeagueMaxWeeks(leagueId: number) {
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
@@ -139,19 +140,48 @@ export async function advanceWeek(leagueId: number) {
     }
   }
 
-  // Update Player Fatigue, Morale & Injury Recovery (Task 1 & 13)
+  // Update Player Fatigue, Morale, Training Effects & Injury Recovery
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
+    const pTeam = p.teamId ? teamMap.get(p.teamId) : null;
+    const trainingFocus = pTeam?.trainingFocus || 'balance';
+
     if (p.isInjured) {
-      p.injuryWeeks = (p.injuryWeeks || 1) - 1;
+      // Better health expense recovers injuries faster
+      const healthSpeed = (pTeam?.healthExpense || 50) > 75 ? 2 : 1;
+      p.injuryWeeks = Math.max(0, (p.injuryWeeks || 1) - healthSpeed);
       if (p.injuryWeeks <= 0) {
         p.isInjured = false;
         p.injuryWeeks = 0;
       }
     }
 
+    // Training Regime Effects on Fatigue and Attributes
+    let extraFatigueRecovery = 0;
+    if (trainingFocus === 'recovery') {
+      extraFatigueRecovery = 25; // Massive rest session
+      p.morale = Math.min(100, (p.morale || 85) + 3);
+    } else if (trainingFocus === 'physical') {
+      extraFatigueRecovery = -8; // Hard workout
+      if (p.attributes && Math.random() < 0.15) {
+        p.attributes.physical = Math.min(99, p.attributes.physical + 1);
+      }
+    } else if (trainingFocus === 'attacking') {
+      if (p.attributes && ['DEL', 'MED'].includes(p.position) && Math.random() < 0.15) {
+        p.attributes.shooting = Math.min(99, p.attributes.shooting + 1);
+      }
+    } else if (trainingFocus === 'defending') {
+      if (p.attributes && ['DEF', 'POR'].includes(p.position) && Math.random() < 0.15) {
+        p.attributes.defending = Math.min(99, p.attributes.defending + 1);
+      }
+    } else if (trainingFocus === 'technical') {
+      if (p.attributes && Math.random() < 0.15) {
+        p.attributes.passing = Math.min(99, p.attributes.passing + 1);
+      }
+    }
+
     if (p.lineupStatus === 'starter') {
-      p.fatigue = Math.min(100, (p.fatigue || 0) + 12);
+      p.fatigue = Math.min(100, Math.max(0, (p.fatigue || 0) + 12 - extraFatigueRecovery));
       p.morale = Math.min(100, (p.morale || 85) + 3);
       if (p.morale >= 50) p.unhappy = false;
       
@@ -162,11 +192,26 @@ export async function advanceWeek(leagueId: number) {
         p.injuryWeeks = Math.floor(Math.random() * 4) + 1;
       }
     } else if (p.lineupStatus === 'bench') {
-      p.fatigue = Math.max(0, (p.fatigue || 0) - 22);
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 22 - extraFatigueRecovery);
       p.morale = Math.max(10, (p.morale || 85) - 2);
+    } else if (p.lineupStatus === 'youth') {
+      // Youth Academy player progression (every 4 weeks or high potential)
+      p.fatigue = 0;
+      p.morale = Math.min(100, (p.morale || 90) + 1);
+      if (league.currentWeek % 4 === 0 && p.overall < p.potential) {
+        const youthBonus = (pTeam?.facilities?.youthLevel || 1) * 0.08;
+        if (Math.random() < (0.35 + youthBonus)) {
+          p.overall += 1;
+          if (p.attributes) {
+            p.attributes.shooting = Math.min(p.potential, p.attributes.shooting + 1);
+            p.attributes.passing = Math.min(p.potential, p.attributes.passing + 1);
+            p.attributes.defending = Math.min(p.potential, p.attributes.defending + 1);
+          }
+        }
+      }
     } else {
-      // Reserve / Youth
-      p.fatigue = Math.max(0, (p.fatigue || 0) - 25);
+      // Reserve
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 25 - extraFatigueRecovery);
       p.morale = Math.max(0, (p.morale || 85) - 4);
     }
 
@@ -189,6 +234,12 @@ export async function advanceWeek(leagueId: number) {
 
   // Process dynamic knockout progressions for Cup and Champions League
   await processKnockoutProgressions(leagueId, league.currentWeek);
+
+  // Update team chemistry ratings
+  for (const t of allTeams) {
+    const tStarters = allPlayers.filter(p => p.teamId === t.id && p.lineupStatus === 'starter');
+    t.teamChemistry = calculateTeamChemistry(tStarters, t).score;
+  }
 
   await db.teams.bulkPut(allTeams);
   await db.leagues.update(leagueId, { currentWeek: league.currentWeek + 1, lastPlayedAt: Date.now() });

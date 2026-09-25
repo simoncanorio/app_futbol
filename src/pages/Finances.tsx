@@ -74,6 +74,64 @@ export function Finances() {
     alert(`¡Contrato firmado con ${s.name}! Se han ingresado $${(s.payout / 1000000).toFixed(1)}M al presupuesto.`);
   };
 
+  const handleUpgradeFacility = async (type: 'stadium' | 'youth' | 'training' | 'medical') => {
+    if (!team) return;
+    const currentFacilities = team.facilities || { stadiumLevel: 1, youthLevel: 1, trainingLevel: 1 };
+    let currentLevel = 1;
+    let cost = 10000000;
+    let title = '';
+
+    if (type === 'stadium') {
+      currentLevel = currentFacilities.stadiumLevel || 1;
+      cost = currentLevel * 15000000;
+      title = 'Estadio';
+    } else if (type === 'youth') {
+      currentLevel = currentFacilities.youthLevel || 1;
+      cost = currentLevel * 8000000;
+      title = 'Academia de Cantera';
+    } else if (type === 'training') {
+      currentLevel = currentFacilities.trainingLevel || 1;
+      cost = currentLevel * 8000000;
+      title = 'Centro de Entrenamiento';
+    } else if (type === 'medical') {
+      currentLevel = Math.min(5, Math.floor((team.healthExpense || 50) / 20) + 1);
+      cost = currentLevel * 6000000;
+      title = 'Servicios Médicos';
+    }
+
+    if (currentLevel >= 5) {
+      alert(`¡${title} ya ha alcanzado el nivel máximo (Nivel 5)!`);
+      return;
+    }
+
+    if (team.budget < cost) {
+      alert(`Presupuesto insuficiente. Necesitas ${formatMoney(cost)} para mejorar ${title}.`);
+      return;
+    }
+
+    team.budget -= cost;
+    if (!team.facilities) team.facilities = { stadiumLevel: 1, youthLevel: 1, trainingLevel: 1 };
+
+    if (type === 'stadium') {
+      team.facilities.stadiumLevel = currentLevel + 1;
+      team.attendance = (team.attendance || 45000) + 10000;
+      team.population = (team.population || 500000) + 100000;
+      team.prestige = Math.min(100, (team.prestige || 70) + 2);
+    } else if (type === 'youth') {
+      team.facilities.youthLevel = currentLevel + 1;
+      team.scoutingExpense = Math.min(100, (team.scoutingExpense || 50) + 10);
+    } else if (type === 'training') {
+      team.facilities.trainingLevel = currentLevel + 1;
+      team.coachingExpense = Math.min(100, (team.coachingExpense || 50) + 10);
+    } else if (type === 'medical') {
+      team.healthExpense = Math.min(100, (team.healthExpense || 50) + 15);
+    }
+
+    await db.teams.put(team);
+    setTeam({ ...team });
+    alert(`¡Mejora completada! ${title} ascendió a Nivel ${currentLevel + 1}.`);
+  };
+
   const formatMoney = (val: number) => {
     if (val >= 1000000 || val <= -1000000) return `$${(val / 1000000).toFixed(2)}M`;
     if (val >= 1000 || val <= -1000) return `$${(val / 1000).toFixed(0)}k`;
@@ -349,6 +407,125 @@ export function Finances() {
            <button className="tm-btn-primary" style={{ marginTop: '1.5rem', width: '100%', padding: '0.8rem', background: 'linear-gradient(135deg, #059669, #10b981)', color: '#022c22', fontWeight: 'bold', fontSize: '0.95rem' }} onClick={saveFinances}>
              Guardar Ajustes Financieros
            </button>
+        </div>
+      </div>
+
+      {/* Stadium & Club Facilities Expansion Section */}
+      <div className="glass-panel" style={{ marginTop: '2.5rem', padding: '1.5rem', background: 'rgba(15, 23, 42, 0.85)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+              <Building color="#38bdf8" /> Infraestructuras & Expansión del Estadio
+            </h3>
+            <p style={{ margin: '0.3rem 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+              Invierte el presupuesto del club para ampliar el aforo del estadio y modernizar los complejos deportivos.
+            </p>
+          </div>
+          <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+            Presupuesto disponible: <strong style={{ color: '#eab308' }}>{formatMoney(team?.budget || 0)}</strong>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.2rem' }}>
+          {/* Stadium */}
+          {(() => {
+            const lvl = team?.facilities?.stadiumLevel || 1;
+            const nextCost = lvl * 15000000;
+            return (
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: '1.2rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong style={{ color: '#38bdf8', fontSize: '1rem' }}>🏟️ Estadio del Club</strong>
+                  <span style={{ background: '#0284c7', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Nivel {lvl}/5</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 0.8rem 0' }}>
+                  Capacidad actual: <strong style={{ color: '#f1f5f9' }}>{(team?.attendance || 45000).toLocaleString()} espectadores</strong>.
+                </p>
+                <button
+                  onClick={() => handleUpgradeFacility('stadium')}
+                  disabled={lvl >= 5}
+                  className="tm-btn-primary"
+                  style={{ width: '100%', padding: '8px', fontSize: '0.8rem', background: lvl >= 5 ? '#475569' : '#0284c7', fontWeight: 'bold' }}
+                >
+                  {lvl >= 5 ? 'Nivel Máximo (5/5)' : `Ampliar Aforo (+10k) • ${formatMoney(nextCost)}`}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Youth Facility */}
+          {(() => {
+            const lvl = team?.facilities?.youthLevel || 1;
+            const nextCost = lvl * 8000000;
+            return (
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: '1.2rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong style={{ color: '#10b981', fontSize: '1rem' }}>🎓 Academia de Cantera</strong>
+                  <span style={{ background: '#059669', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Nivel {lvl}/5</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 0.8rem 0' }}>
+                  Aumenta la tasa de crecimiento y el potencial de los jóvenes canteranos.
+                </p>
+                <button
+                  onClick={() => handleUpgradeFacility('youth')}
+                  disabled={lvl >= 5}
+                  className="tm-btn-primary"
+                  style={{ width: '100%', padding: '8px', fontSize: '0.8rem', background: lvl >= 5 ? '#475569' : '#059669', fontWeight: 'bold' }}
+                >
+                  {lvl >= 5 ? 'Nivel Máximo (5/5)' : `Mejorar Cantera • ${formatMoney(nextCost)}`}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Training Facility */}
+          {(() => {
+            const lvl = team?.facilities?.trainingLevel || 1;
+            const nextCost = lvl * 8000000;
+            return (
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: '1.2rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong style={{ color: '#f59e0b', fontSize: '1rem' }}>🏋️ Complejo Deportivo</strong>
+                  <span style={{ background: '#d97706', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Nivel {lvl}/5</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 0.8rem 0' }}>
+                  Acelera las ganancias de OVR y rendimiento físico de la plantilla.
+                </p>
+                <button
+                  onClick={() => handleUpgradeFacility('training')}
+                  disabled={lvl >= 5}
+                  className="tm-btn-primary"
+                  style={{ width: '100%', padding: '8px', fontSize: '0.8rem', background: lvl >= 5 ? '#475569' : '#d97706', fontWeight: 'bold' }}
+                >
+                  {lvl >= 5 ? 'Nivel Máximo (5/5)' : `Modernizar Gimnasio • ${formatMoney(nextCost)}`}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Medical Facility */}
+          {(() => {
+            const lvl = Math.min(5, Math.floor((team?.healthExpense || 50) / 20) + 1);
+            const nextCost = lvl * 6000000;
+            return (
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: '1.2rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong style={{ color: '#ec4899', fontSize: '1rem' }}>🏥 Centro Médico</strong>
+                  <span style={{ background: '#db2777', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Nivel {lvl}/5</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 0.8rem 0' }}>
+                  Acelera la recuperación de jugadores lesionados al doble de velocidad.
+                </p>
+                <button
+                  onClick={() => handleUpgradeFacility('medical')}
+                  disabled={lvl >= 5}
+                  className="tm-btn-primary"
+                  style={{ width: '100%', padding: '8px', fontSize: '0.8rem', background: lvl >= 5 ? '#475569' : '#db2777', fontWeight: 'bold' }}
+                >
+                  {lvl >= 5 ? 'Nivel Máximo (5/5)' : `Mejorar Clínica • ${formatMoney(nextCost)}`}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Player, type Team } from '../db/db';
 import { autoSelectLineupForTeam } from '../utils/lineupUtils';
-import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info, Sparkles } from 'lucide-react';
+import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info, Sparkles, Heart } from 'lucide-react';
+import { calculateTeamChemistry } from '../utils/chemistryUtils';
 import './Tactics.css';
 
 interface PitchSlot {
@@ -261,6 +262,7 @@ export function Tactics() {
   });
 
   const effectiveTeamOvr = starterCount > 0 ? Math.round(totalEffectiveOvr / starterCount) : (team?.overall || 75);
+  const chemResult = calculateTeamChemistry(starters, team || undefined);
 
   const handleDragStart = (e: React.DragEvent, playerId: number) => {
     setDraggedPlayerId(playerId);
@@ -334,15 +336,27 @@ export function Tactics() {
             <Sparkles size={16} /> Auto-Alinear (11 Titulares)
           </button>
           {team && (
-            <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-              <Shield color="#38bdf8" size={20} />
-              <div>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Media Ajustada Once:</span>
-                <strong style={{ color: effectiveTeamOvr < team.overall ? '#ef4444' : '#10b981', fontSize: '1.1rem' }}>
-                  {effectiveTeamOvr} OVR {effectiveTeamOvr < team.overall ? `( Penalización Táctica )` : ''}
-                </strong>
+            <>
+              <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                <Heart color={chemResult.color} size={20} />
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Química de Plantilla:</span>
+                  <strong style={{ color: chemResult.color, fontSize: '1.1rem' }}>
+                    {chemResult.score}% ({chemResult.label})
+                  </strong>
+                </div>
               </div>
-            </div>
+
+              <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                <Shield color="#38bdf8" size={20} />
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Media Ajustada Once:</span>
+                  <strong style={{ color: effectiveTeamOvr < team.overall ? '#ef4444' : '#10b981', fontSize: '1.1rem' }}>
+                    {effectiveTeamOvr} OVR {effectiveTeamOvr < team.overall ? `( Penalización Táctica )` : ''}
+                  </strong>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

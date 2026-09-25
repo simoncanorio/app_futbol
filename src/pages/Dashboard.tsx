@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type League, type Team, type Player, type Match } from '../db/db';
-import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, Zap, ArrowRight, Activity } from 'lucide-react';
+import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, Zap, ArrowRight, Activity, Heart, Play } from 'lucide-react';
+import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
+import { advanceWeek } from '../engine/gameLoop';
+import { calculateTeamChemistry } from '../utils/chemistryUtils';
 import './Dashboard.css';
 
 export function Dashboard() {
@@ -12,6 +15,9 @@ export function Dashboard() {
   const [starters, setStarters] = useState<Player[]>([]);
   const [nextMatch, setNextMatch] = useState<{ match: Match; opponent: Team } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLivePlaying, setIsLivePlaying] = useState(false);
+  const [liveHomePlayers, setLiveHomePlayers] = useState<Player[]>([]);
+  const [liveAwayPlayers, setLiveAwayPlayers] = useState<Player[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -69,10 +75,37 @@ export function Dashboard() {
   const totalGames = (team?.wins || 0) + (team?.draws || 0) + (team?.losses || 0);
   const winRate = totalGames > 0 ? Math.round(((team?.wins || 0) / totalGames) * 100) : 0;
   const goalDiff = (team?.goalsFor || 0) - (team?.goalsAgainst || 0);
+  const chemistry = calculateTeamChemistry(starters, team || undefined);
 
   // Top Scorer and Top Assist in starters
   const topScorers = [...starters].sort((a, b) => (b.stats?.goals || 0) - (a.stats?.goals || 0));
   const topAssists = [...starters].sort((a, b) => (b.stats?.assists || 0) - (a.stats?.assists || 0));
+
+  const handleStartLiveMatch = async () => {
+    if (!nextMatch || !team) return;
+    const isUserHome = nextMatch.match.homeTeamId === team.id;
+    const homeTeamId = isUserHome ? team.id! : nextMatch.opponent.id!;
+    const awayTeamId = isUserHome ? nextMatch.opponent.id! : team.id!;
+
+    const hPlayers = await db.players.where('teamId').equals(homeTeamId).toArray();
+    const aPlayers = await db.players.where('teamId').equals(awayTeamId).toArray();
+    setLiveHomePlayers(hPlayers);
+    setLiveAwayPlayers(aPlayers);
+    setIsLivePlaying(true);
+  };
+
+  const handleFinishLiveMatch = async (hScore: number, aScore: number, events: any) => {
+    if (!nextMatch || !league) return;
+    const m = nextMatch.match;
+    m.homeScore = hScore;
+    m.awayScore = aScore;
+    m.isPlayed = true;
+    m.events = events;
+    await db.matches.put(m);
+
+    await advanceWeek(league.id!);
+    window.location.reload();
+  };
 
   const handleExportSave = async () => {
     if (!leagueId) return;
@@ -154,6 +187,14 @@ export function Dashboard() {
             <div>
               <span className="lbl">Posición</span>
               <strong className="val">{teamPosition}º / {standings.length}</strong>
+            </div>
+          </div>
+
+          <div className="dash-hero-badge">
+            <Heart size={18} color={chemistry.color} />
+            <div>
+              <span className="lbl">Química Equipo</span>
+              <strong className="val" style={{ color: chemistry.color }}>{chemistry.score}%</strong>
             </div>
           </div>
 
@@ -252,9 +293,36 @@ export function Dashboard() {
                   <strong>{nextMatch.opponent.name}</strong>
                   <span className="opp-ovr">OVR {nextMatch.opponent.overall}</span>
                 </div>
-                <Link to={`/l/${leagueId}/daily_schedule`} className="btn-match-play">
-                  Simular Jornada {nextMatch.match.week} <ArrowRight size={14} />
-                </Link>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button
+                    onClick={handleStartLiveMatch}
+                    className="tm-btn-primary"
+                    style={{
+                      flex: 1,
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      padding: '8px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Play size={15} fill="currentColor" /> Jugar en Vivo
+                  </button>
+                  <Link
+                    to={`/l/${leagueId}/daily_schedule`}
+                    className="btn-match-play"
+                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem', textAlign: 'center' }}
+                  >
+                    Simular Jornada <ArrowRight size={14} />
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="next-match-box">
@@ -423,6 +491,17 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+      {isLivePlaying && nextMatch && team && (
+        <LiveMatchEngine
+          match={nextMatch.match}
+          homeTeam={nextMatch.match.homeTeamId === team.id ? team : nextMatch.opponent}
+          awayTeam={nextMatch.match.homeTeamId === team.id ? nextMatch.opponent : team}
+          homePlayers={liveHomePlayers}
+          awayPlayers={liveAwayPlayers}
+          onFinish={handleFinishLiveMatch}
+          onClose={() => setIsLivePlaying(false)}
+        />
+      )}
     </div>
   );
 }

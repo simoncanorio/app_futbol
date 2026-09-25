@@ -206,6 +206,8 @@ export interface Team {
     secondaryColor: string;
     pattern: 'solid' | 'stripes' | 'hoop' | 'diagonal';
   };
+  trainingFocus?: 'balance' | 'attacking' | 'defending' | 'physical' | 'technical' | 'recovery';
+  teamChemistry?: number; // 0 to 100
 }
 
 export interface Match {
