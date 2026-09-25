@@ -290,7 +290,13 @@ export function Dashboard() {
               <div className="next-match-box">
                 <div className="opp-info">
                   <span className="vs-lbl">VS</span>
-                  <strong>{nextMatch.opponent.name}</strong>
+                  <Link
+                    to={`/l/${leagueId}/team/${nextMatch.opponent.id}`}
+                    style={{ color: '#ffffff', textDecoration: 'none', fontWeight: 'bold' }}
+                    title="Ver plantilla del rival"
+                  >
+                    {nextMatch.opponent.name}
+                  </Link>
                   <span className="opp-ovr">OVR {nextMatch.opponent.overall}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>

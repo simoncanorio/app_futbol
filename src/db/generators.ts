@@ -6,12 +6,66 @@ const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
 const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'Alemania', 'Italia', 'Portugal', 'Uruguay', 'Colombia'];
 
-export const espTeams = ['Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Valencia CF', 'Sevilla FC', 'Athletic Club', 'Real Betis', 'Villarreal CF', 'Real Sociedad', 'Celta de Vigo'];
-export const engTeams = ['Manchester City', 'Arsenal FC', 'Liverpool FC', 'Chelsea FC', 'Manchester United', 'Tottenham Hotspur', 'Newcastle United', 'Aston Villa', 'Everton FC', 'West Ham United'];
+export const espTeams = [
+  'Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Athletic Club',
+  'Real Sociedad', 'Real Betis', 'Villarreal CF', 'Valencia CF',
+  'Sevilla FC', 'Girona FC', 'CA Osasuna', 'Celta de Vigo',
+  'Rayo Vallecano', 'RCD Mallorca', 'Getafe CF', 'Deportivo Alavés',
+  'RCD Espanyol', 'UD Las Palmas', 'CD Leganés', 'Real Valladolid'
+];
+export const engTeams = [
+  'Manchester City', 'Arsenal FC', 'Liverpool FC', 'Chelsea FC',
+  'Manchester United', 'Tottenham Hotspur', 'Newcastle United', 'Aston Villa',
+  'Brighton & Hove Albion', 'West Ham United', 'Everton FC', 'Fulham FC',
+  'Wolverhampton Wanderers', 'Brentford FC', 'Crystal Palace', 'AFC Bournemouth',
+  'Nottingham Forest', 'Leicester City', 'Ipswich Town', 'Southampton FC'
+];
 export const itaTeams = ['Juventus', 'Inter', 'AC Milan', 'Napoli', 'AS Roma', 'Lazio', 'Atalanta', 'Fiorentina'];
 export const fraTeams = ['Paris SG', 'Olympique de Marseille', 'Olympique Lyonnais', 'AS Monaco', 'LOSC Lille'];
 export const gerTeams = ['Bayern München', 'Borussia Dortmund', 'Bayer 04 Leverkusen', 'RB Leipzig', 'Eintracht Frankfurt'];
-export const teamNames = [...espTeams, ...engTeams, ...itaTeams, ...fraTeams, ...gerTeams];
+export const teamNames = [...espTeams, ...engTeams];
+
+export function findFifaClub(teamName: string): FIFAClubData | undefined {
+  if (!teamName) return undefined;
+  const clean = (s: string) => s.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, ' ')
+    .trim();
+
+  const target = clean(teamName);
+
+  // 1. Direct name match or exact alias match
+  for (const c of EA_FC_DATABASE) {
+    if (clean(c.name) === target) return c;
+    if (c.aliases && c.aliases.some(a => clean(a) === target)) return c;
+  }
+
+  // 2. Substring match
+  for (const c of EA_FC_DATABASE) {
+    const cClean = clean(c.name);
+    if (cClean.includes(target) || target.includes(cClean)) return c;
+    if (c.aliases && c.aliases.some(a => {
+      const aClean = clean(a);
+      return aClean.includes(target) || target.includes(aClean);
+    })) return c;
+  }
+
+  // 3. Word match (e.g. "Brighton" in "Brighton & Hove Albion")
+  const targetWords = target.split(/\s+/).filter(w => w.length >= 4);
+  if (targetWords.length > 0) {
+    for (const c of EA_FC_DATABASE) {
+      const cClean = clean(c.name);
+      if (targetWords.some(tw => cClean.includes(tw))) return c;
+      if (c.aliases && c.aliases.some(a => {
+        const aClean = clean(a);
+        return targetWords.some(tw => aClean.includes(tw));
+      })) return c;
+    }
+  }
+
+  return undefined;
+}
 
 function randomName() {
   return `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
@@ -47,7 +101,7 @@ export async function createNewLeague(
   const createdTeamIds: number[] = [];
 
   for (const tname of teamNames) {
-    const fifaMatch = EA_FC_DATABASE.find(c => c.name.toLowerCase() === tname.toLowerCase());
+    const fifaMatch = findFifaClub(tname);
     const isEsp = espTeams.includes(tname);
     const nameLow = tname.toLowerCase();
     let initialPrestige = 70;
@@ -263,7 +317,7 @@ export async function createRealLeagueFromTransfermarkt(
       const club = clubs[i];
       if (onProgress) onProgress(`[${i + 1}/${clubs.length}] Cargando plantilla de ${club.name}...`);
 
-      const fifaMatch = EA_FC_DATABASE.find(c => c.name.toLowerCase().includes(club.name.toLowerCase()) || club.name.toLowerCase().includes(c.name.toLowerCase()));
+      const fifaMatch = findFifaClub(club.name);
 
       const pop = randomInt(1000000, 15000000);
       const teamId = await db.teams.add({

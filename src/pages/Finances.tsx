@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, type Team, type Player } from '../db/db';
+import { db, type Team, type Player, formatMoney } from '../db/db';
 import { DollarSign, ShieldCheck, Award, HelpCircle, TrendingUp, TrendingDown, PieChart, Building } from 'lucide-react';
 
 export function Finances() {
@@ -14,15 +14,41 @@ export function Finances() {
   const [facilities, setFacilities] = useState(50);
   const [ticketPrice, setTicketPrice] = useState(50);
 
-  const sponsorsList = [
-    { name: 'Fly Emirates Global', payout: 35000000, bonus: 3000000, color: '#ef4444', desc: 'Patrocinador oficial de aviación de élite.' },
-    { name: 'Spotify Audio', payout: 32000000, bonus: 2500000, color: '#10b981', desc: 'Sponsor tecnológico y cultural de camisetas.' },
-    { name: 'Qatar Airways', payout: 38000000, bonus: 3500000, color: '#8b5cf6', desc: 'Contrato multimillonario internacional.' },
-    { name: 'Adidas Global Football', payout: 40000000, bonus: 4000000, color: '#38bdf8', desc: 'Patrocinio técnico y marca deportiva global.' },
-    { name: 'Nike Elite Sports', payout: 42000000, bonus: 4200000, color: '#f59e0b', desc: 'Acuerdo de patrocinio número 1 del mundo.' },
-    { name: 'Red Bull Energy', payout: 30000000, bonus: 2800000, color: '#ec4899', desc: 'Impulso joven de rendimiento y marketing.' },
-    { name: 'Etihad Airways', payout: 36000000, bonus: 3200000, color: '#06b6d4', desc: 'Patrocinio premium con prima por trofeo.' },
+  const [sponsorTab, setSponsorTab] = useState<'shirt' | 'sleeve' | 'stadium' | 'digital'>('shirt');
+
+  const shirtSponsors = [
+    { name: 'Fly Emirates Global', payout: 38000000, bonus: 3000000, color: '#ef4444', desc: 'Patrocinador oficial de aviación de élite.' },
+    { name: 'Spotify Music', payout: 35000000, bonus: 2800000, color: '#10b981', desc: 'Sponsor tecnológico y cultural de camisetas.' },
+    { name: 'Qatar Airways', payout: 40000000, bonus: 3500000, color: '#8b5cf6', desc: 'Contrato multimillonario internacional.' },
+    { name: 'Adidas Global Football', payout: 42000000, bonus: 4000000, color: '#38bdf8', desc: 'Patrocinio técnico y marca deportiva global.' },
+    { name: 'Nike Elite Sports', payout: 45000000, bonus: 4500000, color: '#f59e0b', desc: 'Acuerdo de patrocinio número 1 del mundo.' },
+    { name: 'Red Bull Energy', payout: 32000000, bonus: 2800000, color: '#ec4899', desc: 'Impulso joven de rendimiento y marketing.' },
+    { name: 'Etihad Airways', payout: 37000000, bonus: 3200000, color: '#06b6d4', desc: 'Patrocinio premium con prima por trofeo.' },
     { name: 'TeamViewer Digital', payout: 28000000, bonus: 2000000, color: '#6366f1', desc: 'Sponsor de innovación tecnológica.' }
+  ];
+
+  const sleeveSponsors = [
+    { name: 'Snapdragon Qualcomm', payout: 20000000, bonus: 1800000, color: '#f97316', desc: 'Potencia tecnológica en la manga de juego.' },
+    { name: 'Visit Rwanda Tourism', payout: 18000000, bonus: 1500000, color: '#14b8a6', desc: 'Promoción turística y visibilidad global.' },
+    { name: 'Hyundai Mobility', payout: 16000000, bonus: 1200000, color: '#0284c7', desc: 'Automoción y movilidad internacional.' },
+    { name: 'Bitget Crypto Exchange', payout: 17000000, bonus: 1600000, color: '#06b6d4', desc: 'Fintech e innovación en divisas digitales.' },
+    { name: 'Pirelli Motorsport', payout: 15000000, bonus: 1000000, color: '#eab308', desc: 'Firma mítica del automovilismo y rendimiento.' },
+    { name: 'OKX Web3 Wallet', payout: 19000000, bonus: 1700000, color: '#64748b', desc: 'Plataforma líder en el ecosistema digital.' }
+  ];
+
+  const stadiumSponsors = [
+    { name: 'Allianz Arena Partner', payout: 28000000, bonus: 2500000, color: '#2563eb', desc: 'Naming rights oficiales del estadio del club.' },
+    { name: 'Civitas Metropolitan', payout: 25000000, bonus: 2000000, color: '#dc2626', desc: 'Desarrollo urbanístico e instalaciones.' },
+    { name: 'Spotify Music Stadium', payout: 27000000, bonus: 2400000, color: '#10b981', desc: 'Naming rights con conciertos y eventos exclusivos.' },
+    { name: 'Emirates Park Ground', payout: 29000000, bonus: 2600000, color: '#b91c1c', desc: 'Presencia internacional en la sede del equipo.' },
+    { name: 'Mercedes-Benz Dome', payout: 30000000, bonus: 3000000, color: '#94a3b8', desc: 'Máximo estándar arquitectónico de marca automotriz.' }
+  ];
+
+  const digitalSponsors = [
+    { name: 'EA SPORTS FC Partner', payout: 18000000, bonus: 1500000, color: '#22c55e', desc: 'Socio oficial de videojuegos de fútbol.' },
+    { name: 'Sony PlayStation Gaming', payout: 19000000, bonus: 1600000, color: '#3b82f6', desc: 'Entretenimiento interactivo en tribunas y redes.' },
+    { name: 'Google Pixel AI', payout: 17000000, bonus: 1400000, color: '#ea4335', desc: 'Innovación en análisis de datos y cámara del club.' },
+    { name: 'Paramount+ Streaming', payout: 16000000, bonus: 1200000, color: '#0ea5e9', desc: 'Transmisión de documentales y contenido exclusivo.' }
   ];
 
   useEffect(() => {
@@ -61,17 +87,23 @@ export function Finances() {
     }
   };
 
-  const handleSelectSponsor = async (s: typeof sponsorsList[0]) => {
+  const handleSelectSponsor = async (slot: 'shirt' | 'sleeve' | 'stadium' | 'digital', s: { name: string; payout: number; bonus: number }) => {
     if (!team) return;
-    team.mainSponsor = {
+    const sponsorObj = {
       name: s.name,
       payoutPerSeason: s.payout,
       bonusPerWin: s.bonus
     };
+
+    if (slot === 'shirt') team.mainSponsor = sponsorObj;
+    else if (slot === 'sleeve') team.sleeveSponsor = sponsorObj;
+    else if (slot === 'stadium') team.stadiumSponsor = sponsorObj;
+    else if (slot === 'digital') team.digitalSponsor = sponsorObj;
+
     team.budget += s.payout;
     await db.teams.put(team);
     setTeam({ ...team });
-    alert(`¡Contrato firmado con ${s.name}! Se han ingresado $${(s.payout / 1000000).toFixed(1)}M al presupuesto.`);
+    alert(`¡Acuerdo firmado con ${s.name}! Se han transferido ${formatMoney(s.payout)} directamente al presupuesto del club.`);
   };
 
   const handleUpgradeFacility = async (type: 'stadium' | 'youth' | 'training' | 'medical') => {
@@ -149,8 +181,13 @@ export function Finances() {
 
   const totalAnnualLosses = totalPayrollAnnual + annualFacilitiesCost + annualStadiumMaintenance + annualStaffAndMedical + annualScoutingCost + annualTaxesAndOps;
 
-  // Incomes
-  const sponsorIncome = team?.mainSponsor ? team.mainSponsor.payoutPerSeason : 0;
+  // Incomes (All 4 commercial sponsorship slots combined)
+  const sponsorIncome = 
+    (team?.mainSponsor ? team.mainSponsor.payoutPerSeason : 0) +
+    (team?.sleeveSponsor ? team.sleeveSponsor.payoutPerSeason : 0) +
+    (team?.stadiumSponsor ? team.stadiumSponsor.payoutPerSeason : 0) +
+    (team?.digitalSponsor ? team.digitalSponsor.payoutPerSeason : 0);
+
   const estimatedMatchDayIncome = team ? Math.round(team.attendance * ticketPrice * 19) : 0;
   const tvRightsIncome = Math.round(45000000 + (team?.overall || 80) * 800000);
   const merchIncome = Math.round(15000000 + (team?.overall || 80) * 400000);
@@ -176,19 +213,30 @@ export function Finances() {
   const incTvPct = Math.round((tvRightsIncome / totalAnnualIncomes) * 100) || 35;
   const incMerchPct = Math.max(1, 100 - (incSponsorPct + incMatchPct + incTvPct));
 
+  // Active sponsor for the selected tab
+  const currentSlotSponsor = 
+    sponsorTab === 'shirt' ? team?.mainSponsor :
+    sponsorTab === 'sleeve' ? team?.sleeveSponsor :
+    sponsorTab === 'stadium' ? team?.stadiumSponsor : team?.digitalSponsor;
+
+  const currentTabList = 
+    sponsorTab === 'shirt' ? shirtSponsors :
+    sponsorTab === 'sleeve' ? sleeveSponsors :
+    sponsorTab === 'stadium' ? stadiumSponsors : digitalSponsors;
+
   return (
     <div className="page-container" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div className="page-header" style={{ borderBottom: '1px solid rgba(16, 185, 129, 0.2)', paddingBottom: '1rem' }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', color: '#f8fafc' }}>
-          <Building color="#10b981" size={28} /> Finanzas del Club & Pérdidas Detalladas
+          <Building color="#10b981" size={28} /> Finanzas del Club & Patrocinios Múltiples
         </h1>
-        <p style={{ color: '#94a3b8' }}>Balance financiero completo, desglose visual en barra apilada, licencias de patrocinios e inversión en instalaciones.</p>
+        <p style={{ color: '#94a3b8' }}>Balance financiero completo, acuerdos de patrocinio en 4 categorías comerciales y gestión de instalaciones.</p>
       </div>
 
-      {/* Wage Budget & Sponsor Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+      {/* Wage Budget & Multi-Sponsor Header */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.5rem' }}>
         <div className="glass-panel" style={{ padding: '1.5rem', background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#34d399' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#34d399', margin: '0 0 0.5rem 0' }}>
             <ShieldCheck size={20} color="#10b981" /> Control de Fair Play Financiero (Límite Salarial)
           </h3>
           <p style={{ fontSize: '0.88rem', color: '#94a3b8' }}>Masa salarial de la plantilla vs límite reglamentario (70% de ingresos totales).</p>
@@ -208,33 +256,112 @@ export function Finances() {
           </div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '1.5rem', background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24' }}>
-            <Award size={20} color="#fbbf24" /> Patrocinador Principal de Camiseta
-          </h3>
-          {team?.mainSponsor ? (
-            <div style={{ background: 'rgba(251, 191, 36, 0.05)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(251, 191, 36, 0.2)', marginTop: '0.5rem' }}>
-              <h4 style={{ color: '#f59e0b', margin: 0, fontSize: '1.1rem' }}>{team.mainSponsor.name}</h4>
-              <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                Fijo por temporada: <strong style={{ color: '#10b981' }}>${(team.mainSponsor.payoutPerSeason / 1000000).toFixed(1)}M</strong> | Primado por victoria: <strong style={{ color: '#38bdf8' }}>${(team.mainSponsor.bonusPerWin / 1000000).toFixed(1)}M</strong>
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: '0.3rem 0 0.8rem 0' }}>Elige y firma un contrato de patrocinio para inyectar presupuesto inmediato:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '0.3rem' }}>
-                {sponsorsList.map((s, idx) => (
-                  <div key={idx} style={{ background: 'rgba(255,255,255,0.04)', padding: '0.6rem 0.8rem', borderRadius: '6px', borderLeft: `4px solid ${s.color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span style={{ fontWeight: 'bold', color: '#f1f5f9', fontSize: '0.88rem' }}>{s.name}</span>
-                      <small style={{ display: 'block', color: '#94a3b8', fontSize: '0.75rem' }}>${(s.payout / 1000000).toFixed(1)}M/año + ${(s.bonus / 1000000).toFixed(1)}M por victoria</small>
-                    </div>
-                    <button className="tm-btn-primary" onClick={() => handleSelectSponsor(s)} style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem', background: '#10b981', color: '#022c22', fontWeight: 'bold' }}>Firmar</button>
-                  </div>
-                ))}
+        {/* Multi-Sponsor Management Card */}
+        <div className="glass-panel" style={{ padding: '1.5rem', background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24', margin: 0 }}>
+              <Award size={20} color="#fbbf24" /> Gestión de Patrocinios del Club
+            </h3>
+            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '3px 8px', borderRadius: '6px' }}>
+              Total: {formatMoney(sponsorIncome)}/año
+            </span>
+          </div>
+
+          {/* Sponsor Slot Tabs */}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            {[
+              { id: 'shirt', label: '👕 Camiseta', active: !!team?.mainSponsor },
+              { id: 'sleeve', label: '🦾 Manga', active: !!team?.sleeveSponsor },
+              { id: 'stadium', label: '🏟️ Estadio', active: !!team?.stadiumSponsor },
+              { id: 'digital', label: '💻 Digital', active: !!team?.digitalSponsor }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setSponsorTab(tab.id as any)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  border: sponsorTab === tab.id ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.1)',
+                  background: sponsorTab === tab.id ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.04)',
+                  color: sponsorTab === tab.id ? '#fbbf24' : '#94a3b8'
+                }}
+              >
+                {tab.label} {tab.active ? '✔' : ''}
+              </button>
+            ))}
+          </div>
+
+          {/* Currently Signed Sponsor in this slot */}
+          {currentSlotSponsor && (
+            <div style={{
+              background: 'rgba(251, 191, 36, 0.08)',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              borderRadius: '8px',
+              padding: '0.8rem 1rem',
+              marginBottom: '0.8rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  Contrato Activo
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>
+                  +{formatMoney(currentSlotSponsor.payoutPerSeason)}/año
+                </span>
               </div>
+              <h4 style={{ margin: '4px 0', color: '#ffffff', fontSize: '1rem' }}>{currentSlotSponsor.name}</h4>
+              <small style={{ color: '#94a3b8' }}>Primado por victoria: +{formatMoney(currentSlotSponsor.bonusPerWin)}</small>
             </div>
           )}
+
+          {/* Catalog of Sponsors to Sign */}
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+            {currentSlotSponsor ? 'Elige otro patrocinador para reemplazar el actual:' : 'Elige y firma un patrocinador para este espacio:'}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '160px', overflowY: 'auto', paddingRight: '0.3rem' }}>
+            {currentTabList.map((s, idx) => {
+              const isCurrent = currentSlotSponsor?.name === s.name;
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    background: isCurrent ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.04)',
+                    padding: '0.6rem 0.8rem',
+                    borderRadius: '6px',
+                    borderLeft: `4px solid ${s.color}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <div>
+                    <span style={{ fontWeight: 'bold', color: '#f1f5f9', fontSize: '0.85rem' }}>{s.name}</span>
+                    <small style={{ display: 'block', color: '#94a3b8', fontSize: '0.72rem' }}>
+                      {formatMoney(s.payout)}/año • +{formatMoney(s.bonus)} por victoria
+                    </small>
+                  </div>
+                  <button
+                    disabled={isCurrent}
+                    onClick={() => handleSelectSponsor(sponsorTab, s)}
+                    className="tm-btn-primary"
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '0.3rem 0.7rem',
+                      background: isCurrent ? 'rgba(255,255,255,0.1)' : '#10b981',
+                      color: isCurrent ? '#94a3b8' : '#022c22',
+                      fontWeight: 'bold',
+                      cursor: isCurrent ? 'default' : 'pointer'
+                    }}
+                  >
+                    {isCurrent ? 'Activo' : 'Firmar'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

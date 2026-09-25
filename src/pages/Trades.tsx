@@ -10,6 +10,9 @@ export function Trades() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | ''>('');
   const [roster, setRoster] = useState<Player[]>([]);
+  const [wageBudget, setWageBudget] = useState(0);
+  const [currentWageBill, setCurrentWageBill] = useState(0);
+  const [allowOffWindowTransfers, setAllowOffWindowTransfers] = useState(false);
 
   const toggleWatch = async (p: Player) => {
     p.isWatched = !p.isWatched;
@@ -32,6 +35,19 @@ export function Trades() {
 
   const [aiStatus, setAiStatus] = useState<{ status: 'idle' | 'accepted' | 'rejected' | 'counter'; msg: string; counterFee?: number }>({ status: 'idle', msg: '' });
 
+  const loadTeamFinancials = async (lid: number, uTeamId: number) => {
+    const myPlayers = await db.players.where('teamId').equals(uTeamId).toArray();
+    const totalWages = myPlayers.reduce((sum, p) => sum + (p.contract || 0), 0);
+    setCurrentWageBill(totalWages);
+
+    const uTeam = await db.teams.get(uTeamId);
+    if (uTeam) {
+      setUserTeam(uTeam);
+      const allowedWage = Math.max(totalWages + 15000000, Math.round(uTeam.budget * 0.4 + totalWages * 1.2));
+      setWageBudget(allowedWage);
+    }
+  };
+
   useEffect(() => {
     async function load() {
       const lid = Number(leagueId);
@@ -41,8 +57,7 @@ export function Trades() {
 
       const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
       if (l.userTeamId) {
-        const uTeam = await db.teams.get(l.userTeamId);
-        setUserTeam(uTeam || null);
+        await loadTeamFinancials(lid, l.userTeamId);
         setTeams(allTeams.filter(t => t.id !== l.userTeamId));
       } else {
         setTeams(allTeams);
@@ -76,11 +91,13 @@ export function Trades() {
     setAiStatus({ status: 'idle', msg: '' });
   };
 
+  const windowIsOpen = league ? (isTransferWindowOpen(league.currentWeek) || allowOffWindowTransfers) : false;
+
   const handleProposeOffer = async () => {
     if (!negotiatingPlayer || !userTeam || !league) return;
 
-    if (!isTransferWindowOpen(league.currentWeek)) {
-      setAiStatus({ status: 'rejected', msg: '🔒 El mercado de traspasos está cerrado. Solo se permiten operaciones en semanas 1-4 (Verano) y 19-22 (Invierno).' });
+    if (!windowIsOpen) {
+      setAiStatus({ status: 'rejected', msg: '🔒 El mercado de traspasos está cerrado (Semanas 1-4 Verano / 19-22 Invierno). Activa "Permitir Traspasos Libres" si deseas operar fuera de ventana.' });
       return;
     }
 
@@ -110,13 +127,13 @@ export function Trades() {
 
     if (tradeType === 'transfer') {
       if (offerAmount > userTeam.budget) {
-        setAiStatus({ status: 'rejected', msg: '¡Tu presupuesto no es suficiente para cubrir el precio del traspaso!' });
+        setAiStatus({ status: 'rejected', msg: `¡Tu presupuesto de fichajes (${formatMoney(userTeam.budget)}) es insuficiente para cubrir la oferta de ${formatMoney(offerAmount)}!` });
         return;
       }
 
       if (offerAmount >= targetRequired) {
         setStep('player_contract');
-        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Personalidad del jugador: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones personales.` });
+        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones salariales.` });
       } else if (offerAmount >= targetRequired * 0.8) {
         const counter = Math.round(targetRequired);
         setAiStatus({
@@ -147,16 +164,24 @@ export function Trades() {
     }
 
     if (offerAmount + signingBonus > userTeam.budget) {
-      setAiStatus({ status: 'rejected', msg: 'Presupuesto total insuficiente para cubrir el traspaso y la prima de fichaje.' });
+      setAiStatus({ status: 'rejected', msg: `Presupuesto de traspaso insuficiente: Necesitas ${formatMoney(offerAmount + signingBonus)} (Traspaso + Prima) pero tienes ${formatMoney(userTeam.budget)} en caja.` });
+      return;
+    }
+
+    const availableWageMargin = wageBudget - currentWageBill;
+    if (playerWage > availableWageMargin) {
+      setAiStatus({ status: 'rejected', msg: `Límite salarial excedido: Este contrato (${formatMoney(playerWage)}/año) supera tu margen salarial disponible (${formatMoney(availableWageMargin)}/año).` });
       return;
     }
 
     // Transfer execution
+    const prevTeamId = negotiatingPlayer.teamId;
     negotiatingPlayer.teamId = userTeam.id!;
     negotiatingPlayer.contract = playerWage;
     negotiatingPlayer.contractYears = contractYears;
     negotiatingPlayer.contractEndSeason = league.season + contractYears;
     negotiatingPlayer.isTransferListed = false;
+    negotiatingPlayer.lineupStatus = 'reserve';
 
     if (tradeType === 'loan') {
       negotiatingPlayer.isOnLoan = true;
@@ -166,16 +191,19 @@ export function Trades() {
 
     await db.players.put(negotiatingPlayer);
 
-    // Update budget
-    userTeam.budget -= (offerAmount + signingBonus);
+    // Update budget and local states
+    const newBudget = userTeam.budget - (offerAmount + signingBonus);
+    userTeam.budget = newBudget;
     await db.teams.put(userTeam);
+    setUserTeam({ ...userTeam, budget: newBudget });
+    setCurrentWageBill(prev => prev + playerWage);
 
     // Record Transaction
     await db.transactions.add({
       leagueId: league.id!,
       type: tradeType === 'loan' ? 'loan' : 'transfer',
       playerId: negotiatingPlayer.id!,
-      fromTeamId: Number(selectedTeamId),
+      fromTeamId: Number(selectedTeamId) || prevTeamId || 0,
       toTeamId: userTeam.id!,
       amount: offerAmount,
       season: league.season,
@@ -185,9 +213,12 @@ export function Trades() {
       buyOptionPrice: buyOptionFee
     });
 
-    setAiStatus({ status: 'accepted', msg: `¡Fichaje completado! ${negotiatingPlayer.name} firma con ${userTeam.name} por ${contractYears} años.` });
+    setAiStatus({ status: 'accepted', msg: `¡Fichaje completado con éxito! ${negotiatingPlayer.name} se une a la plantilla de ${userTeam.name} por ${contractYears} temporadas.` });
     setRoster(r => r.filter(x => x.id !== negotiatingPlayer.id));
   };
+
+  const wageMargin = wageBudget - currentWageBill;
+  const selectedTeam = teams.find(t => t.id === Number(selectedTeamId));
 
   return (
     <div className="page-container">
@@ -196,28 +227,119 @@ export function Trades() {
         <p style={{ color: '#94a3b8' }}>Negocia el precio del traspaso con el club rival y posteriormente el contrato personal con el jugador.</p>
       </div>
 
+      {/* Transfer Window Status Banner */}
+      {league && (
+        <div style={{
+          padding: '1rem 1.5rem',
+          borderRadius: '12px',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          background: windowIsOpen
+            ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.05))'
+            : 'linear-gradient(90deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.05))',
+          border: `1px solid ${windowIsOpen ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '1.5rem' }}>{windowIsOpen ? '🟢' : '🔒'}</span>
+            <div>
+              <strong style={{ color: windowIsOpen ? '#34d399' : '#f87171', fontSize: '1.05rem' }}>
+                {windowIsOpen ? 'Mercado de Traspasos ABIERTO' : 'Mercado de Traspasos CERRADO'}
+              </strong>
+              <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '2px' }}>
+                Semana {league.currentWeek} de 38 • {isTransferWindowOpen(league.currentWeek) ? 'Periodo oficial reglamentario activo' : 'Periodos de mercado: Semanas 1 a 4 (Verano) y 19 a 22 (Invierno)'}
+              </div>
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: '#cbd5e1' }}>
+            <input
+              type="checkbox"
+              checked={allowOffWindowTransfers}
+              onChange={e => setAllowOffWindowTransfers(e.target.checked)}
+              style={{ accentColor: '#38bdf8', width: '16px', height: '16px' }}
+            />
+            <span>Permitir fichajes todo el año (Modo Director Deportivo)</span>
+          </label>
+        </div>
+      )}
+
+      {/* Financial Health KPIs */}
       {userTeam && (
-        <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem' }}>
-          <div className="glass-panel" style={{ padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <DollarSign color="#10b981" size={20} />
-            <span>Presupuesto de Fichajes: <strong>${(userTeam.budget / 1_000_000).toFixed(2)}M</strong></span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div className="glass-panel" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
+            <div style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
+              💰 Presupuesto de Traspasos (Caja)
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981' }}>
+              ${(userTeam.budget / 1_000_000).toFixed(2)}M
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+              Fondos líquidos para pagos de traspasos y primas
+            </div>
+          </div>
+
+          <div className="glass-panel" style={{ padding: '1rem', borderLeft: '4px solid #38bdf8' }}>
+            <div style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
+              📋 Masa Salarial Actual
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#38bdf8' }}>
+              ${(currentWageBill / 1_000_000).toFixed(2)}M / año
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+              Total comprometido en nóminas de jugadores
+            </div>
+          </div>
+
+          <div className="glass-panel" style={{ padding: '1rem', borderLeft: `4px solid ${wageMargin >= 0 ? '#fbbf24' : '#ef4444'}` }}>
+            <div style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
+              ⚖️ Margen Salarial Disponible
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: wageMargin >= 0 ? '#fbbf24' : '#ef4444' }}>
+              ${(wageMargin / 1_000_000).toFixed(2)}M / año
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+              Límite salarial: ${(wageBudget / 1_000_000).toFixed(2)}M
+            </div>
           </div>
         </div>
       )}
 
-      <div className="glass-panel" style={{ marginBottom: '2rem' }}>
-        <label style={{ marginRight: '1rem', fontWeight: 'bold' }}>Seleccionar Club Rival: </label>
-        <select 
-          value={selectedTeamId} 
-          onChange={e => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
-          className="bb-select"
-          style={{ minWidth: '280px' }}
-        >
-          <option value="">-- Elige un equipo --</option>
-          {teams.map(t => (
-            <option key={t.id} value={t.id}>{t.name} (OVR {t.overall})</option>
-          ))}
-        </select>
+      <div className="glass-panel" style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <label style={{ fontWeight: 'bold' }}>Seleccionar Club Rival: </label>
+          <select 
+            value={selectedTeamId} 
+            onChange={e => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
+            className="bb-select"
+            style={{ minWidth: '280px' }}
+          >
+            <option value="">-- Elige un equipo --</option>
+            {teams.map(t => (
+              <option key={t.id} value={t.id}>{t.name} (OVR {t.overall})</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedTeam && (
+          <Link
+            to={`/l/${leagueId}/team/${selectedTeam.id}`}
+            style={{
+              color: '#38bdf8',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            🏟️ Ver Plantilla de {selectedTeam.name} ➡️
+          </Link>
+        )}
       </div>
 
       {selectedTeamId !== '' && (
@@ -399,6 +521,42 @@ export function Trades() {
                   <p className="form-help">Pago único en efectivo: ${(signingBonus / 1_000_000).toFixed(2)}M</p>
                 </div>
               </>
+            )}
+
+            {/* Financial Impact Breakdown Card */}
+            {userTeam && (
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '0.8rem 1rem',
+                marginBottom: '1rem',
+                fontSize: '0.82rem'
+              }}>
+                <div style={{ fontWeight: 'bold', color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', fontSize: '0.72rem' }}>
+                  📊 Resumen de Impacto Financiero
+                </div>
+                {step === 'club_fee' ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>Presupuesto de Caja: <strong style={{ color: '#10b981' }}>{formatMoney(userTeam.budget)}</strong></div>
+                    <div>Oferta de Traspaso: <strong style={{ color: '#ef4444' }}>-{formatMoney(offerAmount)}</strong></div>
+                    <div style={{ gridColumn: 'span 2', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '4px' }}>
+                      Caja Estimada Restante: <strong style={{ color: (userTeam.budget - offerAmount) >= 0 ? '#38bdf8' : '#ef4444' }}>
+                        {formatMoney(userTeam.budget - offerAmount)}
+                      </strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>Margen Salarial: <strong style={{ color: '#fbbf24' }}>{formatMoney(wageMargin)}/año</strong></div>
+                    <div>Salario Propuesto: <strong style={{ color: '#38bdf8' }}>{formatMoney(playerWage)}/año</strong></div>
+                    <div>Prima de Fichaje: <strong style={{ color: '#ef4444' }}>-{formatMoney(signingBonus)}</strong></div>
+                    <div>Margen Tras Fichaje: <strong style={{ color: (wageMargin - playerWage) >= 0 ? '#10b981' : '#ef4444' }}>
+                      {formatMoney(wageMargin - playerWage)}/año
+                    </strong></div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* AI Status response */}

@@ -108,6 +108,9 @@ export function YouthAcademy() {
     setTimeout(() => setStatusMsg(null), 4000);
   };
 
+  const [trialCandidates, setTrialCandidates] = useState<Player[] | null>(null);
+  const [signedCandidateIndices, setSignedCandidateIndices] = useState<number[]>([]);
+
   const handleScoutTrials = async () => {
     if (!team || !league) return;
     const cost = 500000;
@@ -120,29 +123,30 @@ export function YouthAcademy() {
     team.budget -= cost;
     await db.teams.put(team);
 
-    // Generate 3 fresh youth prospects
-    const positions: Array<'POR' | 'DEF' | 'MED' | 'DEL'> = ['DEF', 'MED', 'DEL'];
-    const specMap: Record<string, Array<'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC'>> = {
+    // Generate 4 fresh random youth prospects with varying positions and potential
+    const positions: Array<'POR' | 'DEF' | 'MED' | 'DEL'> = ['POR', 'DEF', 'MED', 'DEL'];
+    const specMap: Record<string, Array<'POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC'>> = {
+      POR: ['POR'],
       DEF: ['DFC', 'LI', 'LD'],
       MED: ['MCD', 'MC', 'MCO'],
       DEL: ['DC', 'EI', 'ED']
     };
 
-    const newProspects: Player[] = [];
-    for (let i = 0; i < 3; i++) {
+    const candidates: Player[] = [];
+    for (let i = 0; i < 4; i++) {
       const pos = positions[i % positions.length];
       const specList = specMap[pos];
       const spec = specList[Math.floor(Math.random() * specList.length)];
       const country = COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)];
       const name = `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
-      const overall = 60 + Math.floor(Math.random() * 10); // 60-69
-      const potential = Math.min(95, overall + 18 + Math.floor(Math.random() * 12)); // 80-95
+      const overall = 58 + Math.floor(Math.random() * 14); // 58-71
+      const potential = Math.min(96, overall + 14 + Math.floor(Math.random() * 16)); // 72-96
 
-      newProspects.push({
+      candidates.push({
         leagueId: league.id!,
         teamId: team.id!,
-        name,
-        age: 16 + Math.floor(Math.random() * 3), // 16-18
+        name: `${name} (Canterano)`,
+        age: 15 + Math.floor(Math.random() * 4), // 15-18
         overall,
         potential,
         position: pos,
@@ -154,16 +158,16 @@ export function YouthAcademy() {
         stats: getInitialPlayerStats(),
         bio: {
           country,
-          height: 172 + Math.floor(Math.random() * 18),
-          weight: 65 + Math.floor(Math.random() * 18)
+          height: 170 + Math.floor(Math.random() * 20),
+          weight: 62 + Math.floor(Math.random() * 22)
         },
         attributes: {
-          pace: overall + Math.floor(Math.random() * 10) - 5,
-          shooting: pos === 'DEL' ? overall + 4 : overall - 6,
-          passing: pos === 'MED' ? overall + 5 : overall - 4,
-          dribbling: overall + Math.floor(Math.random() * 6),
-          defending: pos === 'DEF' ? overall + 6 : 40,
-          physical: overall - 2 + Math.floor(Math.random() * 8)
+          pace: overall + Math.floor(Math.random() * 12) - 6,
+          shooting: pos === 'DEL' ? overall + 6 : overall - 8,
+          passing: pos === 'MED' ? overall + 6 : overall - 6,
+          dribbling: overall + Math.floor(Math.random() * 8) - 2,
+          defending: pos === 'DEF' ? overall + 8 : pos === 'POR' ? 40 : 45,
+          physical: overall - 2 + Math.floor(Math.random() * 10)
         },
         morale: 95,
         fatigue: 0,
@@ -171,14 +175,37 @@ export function YouthAcademy() {
       });
     }
 
-    await db.players.bulkAdd(newProspects);
-    await loadData();
+    setSignedCandidateIndices([]);
+    setTrialCandidates(candidates);
     setIsScouting(false);
+  };
+
+  const handleSignCandidate = async (index: number) => {
+    if (!trialCandidates || !trialCandidates[index]) return;
+    const playerToSign = trialCandidates[index];
+    await db.players.add(playerToSign);
+    setSignedCandidateIndices(prev => [...prev, index]);
+    await loadData();
     setStatusMsg({
-      text: `¡Éxito! Tus ojeadores han reclutado a 3 nuevas joyas para el filial (-$500k invertidos).`,
+      text: `¡Fichaje completado! ${playerToSign.name} ha firmado con la cantera del club.`,
       type: 'success'
     });
-    setTimeout(() => setStatusMsg(null), 5000);
+    setTimeout(() => setStatusMsg(null), 4000);
+  };
+
+  const handleSignAllCandidates = async () => {
+    if (!trialCandidates) return;
+    const unsigned = trialCandidates.filter((_, idx) => !signedCandidateIndices.includes(idx));
+    if (unsigned.length > 0) {
+      await db.players.bulkAdd(unsigned);
+      setSignedCandidateIndices(trialCandidates.map((_, idx) => idx));
+      await loadData();
+      setStatusMsg({
+        text: `¡Has incorporado a todos los ${unsigned.length} canteranos a tu filial!`,
+        type: 'success'
+      });
+      setTimeout(() => setStatusMsg(null), 4000);
+    }
   };
 
   const confirmPromote = async () => {
@@ -487,6 +514,238 @@ export function YouthAcademy() {
           onConfirm={confirmPromote}
           onCancel={() => setPromotingPlayer(null)}
         />
+      )}
+
+      {trialCandidates && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1.5rem'
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #1e293b, #0f172a)',
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '920px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'rgba(15, 23, 42, 0.6)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🌟</span> Candidatos de las Pruebas Juveniles
+                </h3>
+                <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  Nuestros ojeadores han evaluado a estos jóvenes talentos. Selecciona a quiénes deseas fichar para el filial.
+                </p>
+              </div>
+              <button
+                onClick={() => setTrialCandidates(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Candidates Grid */}
+            <div style={{
+              padding: '1.5rem',
+              overflowY: 'auto',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '1rem'
+            }}>
+              {trialCandidates.map((candidate, idx) => {
+                const isSigned = signedCandidateIndices.includes(idx);
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      background: isSigned ? 'rgba(16, 185, 129, 0.08)' : 'rgba(30, 41, 59, 0.7)',
+                      border: isSigned ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '12px',
+                      padding: '1.2rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div>
+                      {/* Top Bar: Position & Nationality */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 'bold',
+                          backgroundColor: candidate.position === 'DEL' ? 'rgba(239, 68, 68, 0.25)' :
+                                           candidate.position === 'MED' ? 'rgba(16, 185, 129, 0.25)' :
+                                           candidate.position === 'DEF' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(234, 179, 8, 0.25)',
+                          color: candidate.position === 'DEL' ? '#f87171' :
+                                 candidate.position === 'MED' ? '#34d399' :
+                                 candidate.position === 'DEF' ? '#60a5fa' : '#fde047'
+                        }}>
+                          {candidate.specificPosition || candidate.position}
+                        </span>
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                          {candidate.bio?.country || 'Internacional'} • {candidate.age} años
+                        </span>
+                      </div>
+
+                      {/* Name & OVR / Pot */}
+                      <h4 style={{ margin: '0 0 0.5rem 0', color: '#f1f5f9', fontSize: '1.05rem' }}>
+                        {candidate.name}
+                      </h4>
+
+                      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                        <div style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          textAlign: 'center',
+                          flex: 1
+                        }}>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>OVR Actual</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#38bdf8' }}>{candidate.overall}</div>
+                        </div>
+
+                        <div style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          textAlign: 'center',
+                          flex: 1
+                        }}>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Potencial</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: candidate.potential >= 88 ? '#fbbf24' : '#34d399' }}>
+                            {candidate.potential} {candidate.potential >= 90 ? '🌟' : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Key Attributes Mini Grid */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '6px',
+                        background: 'rgba(15, 23, 42, 0.4)',
+                        padding: '8px',
+                        borderRadius: '8px',
+                        fontSize: '0.75rem',
+                        marginBottom: '1rem'
+                      }}>
+                        <div style={{ color: '#cbd5e1' }}>Ritmo: <strong style={{ color: '#fff' }}>{candidate.attributes?.pace || 60}</strong></div>
+                        <div style={{ color: '#cbd5e1' }}>Tiro: <strong style={{ color: '#fff' }}>{candidate.attributes?.shooting || 60}</strong></div>
+                        <div style={{ color: '#cbd5e1' }}>Pase: <strong style={{ color: '#fff' }}>{candidate.attributes?.passing || 60}</strong></div>
+                        <div style={{ color: '#cbd5e1' }}>Regate: <strong style={{ color: '#fff' }}>{candidate.attributes?.dribbling || 60}</strong></div>
+                        <div style={{ color: '#cbd5e1' }}>Defensa: <strong style={{ color: '#fff' }}>{candidate.attributes?.defending || 60}</strong></div>
+                        <div style={{ color: '#cbd5e1' }}>Físico: <strong style={{ color: '#fff' }}>{candidate.attributes?.physical || 60}</strong></div>
+                      </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <button
+                      onClick={() => handleSignCandidate(idx)}
+                      disabled={isSigned}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        fontSize: '0.85rem',
+                        cursor: isSigned ? 'default' : 'pointer',
+                        background: isSigned
+                          ? 'rgba(16, 185, 129, 0.2)'
+                          : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        color: isSigned ? '#10b981' : '#ffffff',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {isSigned ? '✔ Fichado para el Filial' : '✍️ Fichar Canterano'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'rgba(15, 23, 42, 0.6)'
+            }}>
+              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                Fichados: {signedCandidateIndices.length} de {trialCandidates.length}
+              </span>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {signedCandidateIndices.length < trialCandidates.length && (
+                  <button
+                    onClick={handleSignAllCandidates}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(16, 185, 129, 0.5)',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10b981',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🌟 Fichar a Todos
+                  </button>
+                )}
+                <button
+                  onClick={() => setTrialCandidates(null)}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#334155',
+                    color: '#ffffff',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Finalizar Pruebas
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

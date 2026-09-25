@@ -201,6 +201,21 @@ export interface Team {
     payoutPerSeason: number;
     bonusPerWin: number;
   };
+  sleeveSponsor?: {
+    name: string;
+    payoutPerSeason: number;
+    bonusPerWin: number;
+  };
+  stadiumSponsor?: {
+    name: string;
+    payoutPerSeason: number;
+    bonusPerWin: number;
+  };
+  digitalSponsor?: {
+    name: string;
+    payoutPerSeason: number;
+    bonusPerWin: number;
+  };
   kit?: {
     primaryColor: string;
     secondaryColor: string;

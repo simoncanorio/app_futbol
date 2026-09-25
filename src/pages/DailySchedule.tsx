@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db, type Match, type Team, type Player, type League } from '../db/db';
 import { advanceWeek } from '../engine/gameLoop';
 import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
@@ -192,9 +192,15 @@ export function DailySchedule() {
             <div className="mc-left" style={{ marginTop: '0.5rem' }}>
               <div className="mc-team">
                 <div className="mc-team-info">
-                  <span className={`mc-name ${m.isPlayed && m.homeScore > m.awayScore ? 'winner' : ''}`}>
+                  <Link
+                    to={`/l/${leagueId}/team/${m.homeTeamId}`}
+                    onClick={e => e.stopPropagation()}
+                    className={`mc-name ${m.isPlayed && m.homeScore > m.awayScore ? 'winner' : ''}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                    title={`Ver plantilla de ${m.homeTeam.name}`}
+                  >
                     {m.homeTeam.name}
-                  </span>
+                  </Link>
                   <span className="mc-ovr">OVR {m.homeTeam.overall}</span>
                 </div>
                 <div className="mc-score">{m.isPlayed ? m.homeScore : '-'}</div>
@@ -202,9 +208,15 @@ export function DailySchedule() {
 
               <div className="mc-team">
                 <div className="mc-team-info">
-                  <span className={`mc-name ${m.isPlayed && m.awayScore > m.homeScore ? 'winner' : ''}`}>
+                  <Link
+                    to={`/l/${leagueId}/team/${m.awayTeamId}`}
+                    onClick={e => e.stopPropagation()}
+                    className={`mc-name ${m.isPlayed && m.awayScore > m.homeScore ? 'winner' : ''}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                    title={`Ver plantilla de ${m.awayTeam.name}`}
+                  >
                     {m.awayTeam.name}
-                  </span>
+                  </Link>
                   <span className="mc-ovr">OVR {m.awayTeam.overall}</span>
                 </div>
                 <div className="mc-score">{m.isPlayed ? m.awayScore : '-'}</div>

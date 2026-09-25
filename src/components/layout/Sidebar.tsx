@@ -23,7 +23,6 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/playoffs`} className="nav-item">Fases Finales</Link>
           <Link to={`/l/${leagueId}/daily_schedule`} className="nav-item">Calendario Diario</Link>
           <Link to={`/l/${leagueId}/finances`} className="nav-item">Finanzas de Liga</Link>
-          <Link to={`/l/${leagueId}/history`} className="nav-item">Historia</Link>
           <Link to={`/l/${leagueId}/transactions`} className="nav-item">Traspasos</Link>
           <Link to={`/l/${leagueId}/notes`} className="nav-item">Notas</Link>
         </div>
