@@ -150,13 +150,16 @@ export interface Player {
   isLoanListed?: boolean;
   askingTransferFee?: number;
 
-  // New Features: Personality, Fatigue, Injury Proneness, Dynamic Development
+  // New Features: Personality, Fatigue, Injury Proneness, Morale, Release Clause
   personality?: 'Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático';
   fatigue?: number; // 0 to 100%
   injuryProne?: number; // 1 to 100
   isInjured?: boolean;
   injuryWeeks?: number;
   developmentType?: 'early_bloomer' | 'normal' | 'late_bloomer' | 'bust';
+  morale?: number; // 0 to 100% (High = happy, Low = wants to leave!)
+  unhappy?: boolean;
+  releaseClause?: number; // Cláusula de rescisión obligatoria
 }
 
 export interface Team {
@@ -165,6 +168,7 @@ export interface Team {
   name: string;
   domesticLeague: string; // 'LaLiga' o 'Premier League'
   overall: number; 
+  prestige?: number; // 0 to 100 (Club Prestige Rating)
   wins: number;
   draws: number;
   losses: number;

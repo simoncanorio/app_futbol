@@ -411,7 +411,12 @@ export function Tactics() {
                           {effectiveOvr}
                           {penalty > 0 && <AlertTriangle size={10} color="#ef4444" style={{ marginLeft: 2 }} />}
                         </div>
-                        <div className="token-name">{occupant.name.split(' ').pop()}</div>
+                        <div className="token-name">
+                          {occupant.unhappy ? '😠 ' : ''}{occupant.injuryWeeks ? '🚑 ' : ''}{occupant.name.split(' ').pop()}
+                        </div>
+                        <div style={{ fontSize: '0.55rem', color: (100 - (occupant.fatigue || 0)) < 70 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                          ⚡ {100 - (occupant.fatigue || 0)}%
+                        </div>
                         {penalty > 0 && <span className="penalty-tag">-{penalty}</span>}
                       </div>
                     ) : (
@@ -441,26 +446,47 @@ export function Tactics() {
                     <th>Pos</th>
                     <th>Nombre</th>
                     <th>OVR</th>
-                    <th>POT</th>
+                    <th>Físico</th>
+                    <th>Moral</th>
+                    <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {bench.map(p => (
-                    <tr
-                      key={p.id}
-                      draggable
-                      onDragStart={e => handleDragStart(e, p.id!)}
-                      className="draggable-row"
-                    >
-                      <td className="col-pos">{p.position}</td>
-                      <td style={{ color: '#ffffff', fontWeight: 'bold' }}>{p.name}</td>
-                      <td className="col-ovr">{p.overall}</td>
-                      <td className="col-pot">{p.potential}</td>
-                    </tr>
-                  ))}
+                  {bench.map(p => {
+                    const fitness = 100 - (p.fatigue || 0);
+                    return (
+                      <tr
+                        key={p.id}
+                        draggable
+                        onDragStart={e => handleDragStart(e, p.id!)}
+                        className="draggable-row"
+                      >
+                        <td className="col-pos">{p.position}</td>
+                        <td style={{ color: '#ffffff', fontWeight: 'bold' }}>{p.name}</td>
+                        <td className="col-ovr">{p.overall}</td>
+                        <td>
+                          <span style={{ color: fitness < 60 ? '#ef4444' : fitness < 80 ? '#eab308' : '#10b981', fontWeight: 'bold', fontSize: '0.8rem' }}>
+                            ⚡ {fitness}%
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '0.8rem', color: p.unhappy ? '#ef4444' : '#38bdf8' }}>
+                            {p.unhappy ? '😠 Descontento' : `😊 ${p.morale || 80}%`}
+                          </span>
+                        </td>
+                        <td>
+                          {p.injuryWeeks ? (
+                            <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold' }}>🚑 Lesionado ({p.injuryWeeks} sem)</span>
+                          ) : (
+                            <span style={{ color: '#10b981', fontSize: '0.8rem' }}>Disponible</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {bench.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', padding: '2rem' }}>No hay suplentes en la banca</td>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>No hay suplentes en la banca</td>
                     </tr>
                   )}
                 </tbody>

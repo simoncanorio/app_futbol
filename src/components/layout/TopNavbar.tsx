@@ -129,7 +129,6 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
               <Link to={`/l/${leagueId}/daily_schedule`}>Calendario Diario</Link>
               <Link to={`/l/${leagueId}/finances`}>Finanzas de Liga</Link>
               <Link to={`/l/${leagueId}/history`}>Historia</Link>
-              <Link to={`/l/${leagueId}/power_rankings`}>Power Rankings</Link>
               <Link to={`/l/${leagueId}/transactions`}>Traspasos</Link>
               <Link to={`/l/${leagueId}/notes`}>Notas</Link>
             </div>
@@ -154,7 +153,6 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
               <Link to={`/l/${leagueId}/compare_players`}>Comparar Jugadores</Link>
               <Link to={`/l/${leagueId}/watch_list`}>Preselección</Link>
               <Link to={`/l/${leagueId}/hall_of_fame`}>Salón de la Fama</Link>
-              <Link to={`/l/${leagueId}/draft`}>Canteranos</Link>
             </div>
           </div>
           <div className="nav-dropdown">

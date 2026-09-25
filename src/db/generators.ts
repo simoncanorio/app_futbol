@@ -44,8 +44,19 @@ export async function createNewLeague(
   const createdTeamIds: number[] = [];
 
   for (const tname of teamNames) {
-    const isEsp = espTeams.includes(tname);
     const fifaMatch = EA_FC_DATABASE.find(c => c.name.toLowerCase() === tname.toLowerCase());
+    const isEsp = espTeams.includes(tname);
+    const nameLow = tname.toLowerCase();
+    let initialPrestige = 70;
+    if (nameLow.includes('madrid') || nameLow.includes('real')) initialPrestige = 98;
+    else if (nameLow.includes('barca') || nameLow.includes('barcelona') || nameLow.includes('catalunya')) initialPrestige = 94;
+    else if (nameLow.includes('city') || nameLow.includes('manchester city')) initialPrestige = 96;
+    else if (nameLow.includes('liverpool') || nameLow.includes('arsenal')) initialPrestige = 90;
+    else if (nameLow.includes('atlético') || nameLow.includes('atletico')) initialPrestige = 88;
+    else {
+      const baseOvr = fifaMatch ? fifaMatch.overall : 78;
+      initialPrestige = Math.min(85, Math.max(50, Math.round((baseOvr - 60) * 2.8)));
+    }
 
     const pop = randomInt(1000000, 12000000);
     const teamId = await db.teams.add({
@@ -53,6 +64,7 @@ export async function createNewLeague(
       domesticLeague: isEsp ? 'LaLiga' : 'Premier League',
       name: tname,
       overall: fifaMatch ? fifaMatch.overall : randomInt(76, 85),
+      prestige: initialPrestige,
       wins: startPeriod === 'preseason' ? 0 : randomInt(4, 14),
       draws: startPeriod === 'preseason' ? 0 : randomInt(2, 6),
       losses: startPeriod === 'preseason' ? 0 : randomInt(3, 10),
@@ -73,6 +85,9 @@ export async function createNewLeague(
     if (fifaMatch && fifaMatch.squad.length > 0) {
       // Use EA FC Database
       for (const fp of fifaMatch.squad) {
+        const isEliteStar = fp.overall >= 89 || fp.marketValue >= 100000000;
+        const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 5));
+
         players.push({
           leagueId,
           teamId,
@@ -85,6 +100,9 @@ export async function createNewLeague(
           contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
           contractYears: randomInt(2, 5),
           contractEndSeason: startYear + randomInt(2, 5),
+          releaseClause: clause,
+          morale: randomInt(80, 95),
+          unhappy: false,
           stats: getInitialPlayerStats(),
           attributes: fp.attributes,
           bio: {
@@ -116,6 +134,9 @@ export async function createNewLeague(
           contract: randomInt(1000000, 6000000),
           contractYears: randomInt(2, 4),
           contractEndSeason: startYear + randomInt(2, 4),
+          releaseClause: randomInt(15, 80) * 1000000,
+          morale: randomInt(80, 95),
+          unhappy: false,
           stats: getInitialPlayerStats(),
           attributes: {
             pace: randomInt(50, 95),

@@ -98,11 +98,20 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     const sellerTeamId = target.teamId!;
     const seller = aiTeams.find(x => x.id === sellerTeamId);
 
-    // Player Personality & Ambition Checks (Task 3 & 12: Realism!)
-    // Ambicious players (e.g. Frenkie de Jong) refuse moving to significantly worse teams (e.g. Girona)
-    if (seller && (target.personality === 'Ambicioso' || target.overall >= 84)) {
-      if (buyer.overall < seller.overall - 4 && !target.isTransferListed) {
-        continue; // Player refuses transfer to smaller club!
+    // Player Personality, Prestige & Morale Checks (Task 1 & Task 3)
+    if (seller) {
+      const buyerPrestige = buyer.prestige || 70;
+      const sellerPrestige = seller.prestige || 70;
+      const playerMorale = target.morale || 85;
+
+      // Unhappy players (morale < 40 or transfer listed) WANT to leave!
+      // Otherwise, players hesitation check if buyer prestige is significantly lower
+      if (buyerPrestige < sellerPrestige - 12 && playerMorale > 40 && !target.unhappy && !target.isTransferListed) {
+        continue; // Refuses transfer to lower prestige club unless unhappy!
+      }
+
+      if ((target.personality === 'Ambicioso' || target.overall >= 84) && buyer.overall < seller.overall - 4 && !target.isTransferListed) {
+        continue; // Ambicious player refuses transfer to smaller club!
       }
     }
 

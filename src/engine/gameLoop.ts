@@ -110,7 +110,7 @@ export async function advanceWeek(leagueId: number) {
     home.budget += weeklyProfit;
   }
 
-  // Update Player Fatigue & Injury Recovery (Task 13)
+  // Update Player Fatigue, Morale & Injury Recovery (Task 1 & 13)
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
     if (p.isInjured) {
@@ -123,6 +123,8 @@ export async function advanceWeek(leagueId: number) {
 
     if (p.lineupStatus === 'starter') {
       p.fatigue = Math.min(100, (p.fatigue || 0) + 12);
+      p.morale = Math.min(100, (p.morale || 85) + 3);
+      if (p.morale >= 50) p.unhappy = false;
       
       // Injury risk if fatigue high & injuryProne
       const baseRisk = (p.fatigue / 100) * 0.04 + ((p.injuryProne || 30) / 100) * 0.03;
@@ -130,9 +132,17 @@ export async function advanceWeek(leagueId: number) {
         p.isInjured = true;
         p.injuryWeeks = Math.floor(Math.random() * 4) + 1;
       }
-    } else {
-      // Recovery for bench/reserve
+    } else if (p.lineupStatus === 'bench') {
       p.fatigue = Math.max(0, (p.fatigue || 0) - 22);
+      p.morale = Math.max(10, (p.morale || 85) - 2);
+    } else {
+      // Reserve / Youth
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 25);
+      p.morale = Math.max(0, (p.morale || 85) - 4);
+    }
+
+    if ((p.morale || 85) < 35) {
+      p.unhappy = true;
     }
   }
   await db.players.bulkPut(allPlayers);
@@ -177,14 +187,28 @@ export async function startNextSeason(leagueId: number) {
     }
   }
 
-  // 1. Reset team W-D-L and goals stats
-  for (const t of allTeams) {
-    t.wins = 0;
-    t.draws = 0;
-    t.losses = 0;
-    t.goalsFor = 0;
-    t.goalsAgainst = 0;
-    if (t.hype) t.hype = Math.floor((t.hype + 50) / 2);
+  // 1. Reset team W-D-L and goals stats & Update Prestige (Task 1)
+  const domMap: Record<string, typeof allTeams> = {};
+  allTeams.forEach(t => {
+    if (!domMap[t.domesticLeague]) domMap[t.domesticLeague] = [];
+    domMap[t.domesticLeague].push(t);
+  });
+
+  for (const leagueName in domMap) {
+    const sorted = domMap[leagueName].sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
+    sorted.forEach((t, rankIdx) => {
+      let prestige = t.prestige || 70;
+      if (rankIdx === 0) prestige = Math.min(100, prestige + 2); // Liga winner
+      else if (rankIdx >= sorted.length - 3) prestige = Math.max(20, prestige - 20); // Relegated
+      t.prestige = prestige;
+
+      t.wins = 0;
+      t.draws = 0;
+      t.losses = 0;
+      t.goalsFor = 0;
+      t.goalsAgainst = 0;
+      if (t.hype) t.hype = Math.floor((t.hype + 50) / 2);
+    });
   }
   await db.teams.bulkPut(allTeams);
 

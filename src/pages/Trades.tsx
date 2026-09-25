@@ -232,34 +232,60 @@ export function Trades() {
                 <th>OVR</th>
                 <th>POT</th>
                 <th>Salario Anual</th>
+                <th>Cláusula Rescisión</th>
                 <th>Acción</th>
               </tr>
             </thead>
             <tbody>
-              {roster.map(p => (
-                <tr key={p.id}>
-                  <td style={{ textAlign: 'center', cursor: 'pointer', width: '30px' }} onClick={() => toggleWatch(p)}>
-                    <span style={{ color: p.isWatched ? '#f59e0b' : '#475569', fontSize: '18px' }}>★</span>
-                  </td>
-                  <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
-                  <td style={{ fontWeight: 'bold' }}>
-                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
-                      {p.name}
-                    </Link>
-                  </td>
-                  <td>{p.age}</td>
-                  <td><strong>{p.overall}</strong></td>
-                  <td>{p.potential}</td>
-                  <td>${(p.contract / 1_000_000).toFixed(2)}M</td>
-                  <td>
-                    <button className="tm-btn-primary" onClick={() => handleOpenNegotiation(p)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
-                      <ArrowLeftRight size={14} /> Negociar
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {roster.map(p => {
+                const clause = p.releaseClause || Math.round(p.contract * 12);
+                return (
+                  <tr key={p.id}>
+                    <td style={{ textAlign: 'center', cursor: 'pointer', width: '30px' }} onClick={() => toggleWatch(p)}>
+                      <span style={{ color: p.isWatched ? '#f59e0b' : '#475569', fontSize: '18px' }}>★</span>
+                    </td>
+                    <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
+                    <td style={{ fontWeight: 'bold' }}>
+                      <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td>{p.age}</td>
+                    <td><strong>{p.overall}</strong></td>
+                    <td>{p.potential}</td>
+                    <td>${(p.contract / 1_000_000).toFixed(2)}M</td>
+                    <td style={{ color: '#f59e0b', fontWeight: 'bold' }}>${(clause / 1_000_000).toFixed(1)}M</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button className="tm-btn-primary" onClick={() => handleOpenNegotiation(p)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}>
+                          <ArrowLeftRight size={14} /> Negociar
+                        </button>
+                        <button 
+                          className="tm-btn-primary" 
+                          onClick={() => {
+                            setNegotiatingPlayer(p);
+                            setTradeType('transfer');
+                            setOfferAmount(clause);
+                            setPlayerWage(p.contract || 2000000);
+                            setContractYears(3);
+                            setSigningBonus(Math.round((p.contract || 2000000) * 0.15));
+                            setStep('player_contract');
+                            setAiStatus({
+                              status: 'accepted',
+                              msg: `🔥 ¡Cláusula de Rescisión abonada (${formatMoney(clause)})! El club no puede impedir el fichaje. Negocia las condiciones salariales con ${p.name}.`
+                            });
+                          }} 
+                          style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', background: '#dc2626' }}
+                        >
+                          🔥 Cláusula
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {roster.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Sin jugadores disponibles.</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem' }}>Sin jugadores disponibles.</td></tr>
               )}
             </tbody>
           </table>
