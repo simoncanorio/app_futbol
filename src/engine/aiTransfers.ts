@@ -15,11 +15,15 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     }
   }
 
+  // Difficulty multiplier
+  let difficultyFactor = 1.1;
+  if (league.difficulty === 'Hard') difficultyFactor = 1.35;
+  if (league.difficulty === 'Insane') difficultyFactor = 1.6;
+
   // 1-3 AI transactions per week in transfer window
   const transferCount = Math.floor(Math.random() * 3) + 1;
 
   for (let tIdx = 0; tIdx < transferCount; tIdx++) {
-    // Pick buyer team randomly
     const buyer = aiTeams[Math.floor(Math.random() * aiTeams.length)];
     const buyerPlayers = playerMap.get(buyer.id!) || [];
 
@@ -39,7 +43,7 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     else if (defs < 5) targetPosition = 'DEF';
     else if (meds < 5) targetPosition = 'MED';
 
-    // 2. Try signing Free Agent if squad is small or needs gap filled
+    // 2. Try signing Free Agent if squad is small
     const freeAgents = allPlayers.filter(p => !p.teamId);
     if (buyerPlayers.length < 20 && freeAgents.length > 0) {
       let faCandidates = targetPosition ? freeAgents.filter(p => p.position === targetPosition) : freeAgents;
@@ -71,7 +75,6 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     // 3. Trade/Transfer candidate targets from other AI teams
     let candidatePlayers = allPlayers.filter(p => p.teamId && p.teamId !== buyer.id! && p.teamId !== userTeamId);
 
-    // Filter by position if gap identified
     if (targetPosition) {
       const posFiltered = candidatePlayers.filter(p => p.position === targetPosition);
       if (posFiltered.length > 0) candidatePlayers = posFiltered;
@@ -92,11 +95,22 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     candidatePlayers.sort((a, b) => b.overall - a.overall);
     const target = candidatePlayers[Math.floor(Math.random() * Math.min(5, candidatePlayers.length))];
 
-    const fee = Math.round(target.contract * (isPrem ? 1.4 : 1.2));
-    if (buyer.budget < fee) continue;
-
     const sellerTeamId = target.teamId!;
     const seller = aiTeams.find(x => x.id === sellerTeamId);
+
+    // 4. Real Madrid vs Barcelona Rivalry Lock Check
+    let rivalryMultiplier = 1.0;
+    if (seller) {
+      const sellerIsReal = seller.name.toLowerCase().includes('madrid') || seller.name.toLowerCase().includes('real');
+      const sellerIsBarca = seller.name.toLowerCase().includes('catalunya') || seller.name.toLowerCase().includes('barca') || seller.name.toLowerCase().includes('barcelona');
+
+      if ((isRealMadrid && sellerIsBarca) || (isBarca && sellerIsReal)) {
+        rivalryMultiplier = 2.5; // Exorbitant anti-rivalry release clause fee!
+      }
+    }
+
+    const fee = Math.round(target.contract * (isPrem ? 1.4 : 1.2) * difficultyFactor * rivalryMultiplier);
+    if (buyer.budget < fee) continue;
 
     // Transfer execution
     target.teamId = buyer.id!;
@@ -109,6 +123,17 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
 
     await db.players.put(target);
     await db.teams.put(buyer);
+
+    // 5. Transfer list surplus management: if buyer now has surplus in target position, list lowest OVR player
+    const updatedBuyerPlayers = [...buyerPlayers, target];
+    const samePosSurplus = updatedBuyerPlayers.filter(p => p.position === target.position).sort((a, b) => a.overall - b.overall);
+    if (samePosSurplus.length > 5) {
+      const surplus = samePosSurplus[0];
+      if (surplus.id !== target.id) {
+        surplus.isTransferListed = true;
+        await db.players.put(surplus);
+      }
+    }
 
     // Record Transaction
     await db.transactions.add({
@@ -123,8 +148,8 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
       date: Date.now()
     });
 
-    // Generate news note if high-profile move (overall >= 84)
-    if (target.overall >= 84) {
+    // Generate news note if high-profile move
+    if (target.overall >= 84 || rivalryMultiplier > 1.5) {
       await db.notes.add({
         leagueId: league.id!,
         entityType: 'general',

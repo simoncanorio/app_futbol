@@ -173,7 +173,23 @@ export function DailySchedule() {
             className={`match-card glass-panel ${m.isPlayed ? 'match-played' : 'match-pending'}`}
             onClick={() => handleMatchClick(m)}
           >
-            <div className="mc-left">
+            <div style={{ position: 'absolute', top: '-10px', left: '15px' }}>
+              {m.type === 'cup' ? (
+                <span style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', border: '1px solid #c084fc', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  🏆 COPA NACIONAL
+                </span>
+              ) : m.type === 'continental' ? (
+                <span style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: '1px solid #f59e0b', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  🌟 CHAMPIONS LEAGUE
+                </span>
+              ) : (
+                <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  ⚽ LIGA
+                </span>
+              )}
+            </div>
+
+            <div className="mc-left" style={{ marginTop: '0.5rem' }}>
               <div className="mc-team">
                 <div className="mc-team-info">
                   <span className={`mc-name ${m.isPlayed && m.homeScore > m.awayScore ? 'winner' : ''}`}>

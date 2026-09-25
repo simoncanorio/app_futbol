@@ -77,11 +77,11 @@ export function NewLeague() {
         const finalName = leagueName || selectedComp?.name || 'Liga Transfermarkt';
         const id = await createRealLeagueFromTransfermarkt(
           finalName,
-          difficulty,
           competitionId,
+          difficulty,
+          selectedTeamIndex,
           startYear,
           startPeriod,
-          selectedTeamIndex,
           (msg) => setStatusMsg(msg)
         );
         navigate(`/l/${id}`);
