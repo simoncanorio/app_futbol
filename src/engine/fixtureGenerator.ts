@@ -119,8 +119,13 @@ export async function generateLeagueFixtures(leagueId: number) {
   }
 
   // 3. UEFA Champions League Fixtures (League Phase: Weeks 4, 9, 14, 19, 24, 27)
-  const topTeams = [...teams].sort((a, b) => b.overall - a.overall);
+  const sortedTeams = [...teams].sort((a, b) => b.overall - a.overall);
+  const topTeams = sortedTeams.slice(0, 16); // Top 16 -> Champions
+  const europaTeams = sortedTeams.slice(16, 32); // Next 16 -> Europa League
+  
   const clMatchWeeks = [4, 9, 14, 19, 24, 27];
+  
+  // Champions League
   clMatchWeeks.forEach((weekNum, idx) => {
     for (let i = 0; i < topTeams.length - 1; i += 2) {
       const homeT = topTeams[(i + idx) % topTeams.length];
@@ -135,6 +140,27 @@ export async function generateLeagueFixtures(leagueId: number) {
           week: weekNum,
           isPlayed: false,
           type: 'continental',
+          events: []
+        });
+      }
+    }
+  });
+
+  // Europa League
+  clMatchWeeks.forEach((weekNum, idx) => {
+    for (let i = 0; i < europaTeams.length - 1; i += 2) {
+      const homeT = europaTeams[(i + idx) % europaTeams.length];
+      const awayT = europaTeams[(i + idx + 1) % europaTeams.length];
+      if (homeT && awayT && homeT.id !== awayT.id) {
+        allFixtures.push({
+          leagueId,
+          homeTeamId: homeT.id!,
+          awayTeamId: awayT.id!,
+          homeScore: 0,
+          awayScore: 0,
+          week: weekNum,
+          isPlayed: false,
+          type: 'europa',
           events: []
         });
       }

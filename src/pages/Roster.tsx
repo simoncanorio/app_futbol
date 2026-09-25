@@ -186,6 +186,8 @@ export function Roster() {
                   <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none', fontWeight: 'bold'}}>
                     {p.name}
                   </Link>
+                  {p.isInjured && <span title={`Lesionado: ${p.injuryType || 'Desconocido'} (${p.injuryWeeks} sem)`} style={{marginLeft:'5px', fontSize: '1.1rem'}}>🏥</span>}
+                  {p.cards?.suspended && <span title="Suspendido (Roja)" style={{marginLeft:'5px', fontSize: '1.1rem'}}>🟥</span>}
                 </td>
                 <td>{p.age}</td>
                 <td><strong>{p.overall}</strong></td>

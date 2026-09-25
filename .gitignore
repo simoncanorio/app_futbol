@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Data processing temp and zip files
+*.zip
+temp_eafc/
+temp_tm/

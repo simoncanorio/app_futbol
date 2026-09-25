@@ -8,7 +8,10 @@ const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'A
 
 export const espTeams = ['Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Valencia CF', 'Sevilla FC', 'Athletic Club', 'Real Betis', 'Villarreal CF', 'Real Sociedad', 'Celta de Vigo'];
 export const engTeams = ['Manchester City', 'Arsenal FC', 'Liverpool FC', 'Chelsea FC', 'Manchester United', 'Tottenham Hotspur', 'Newcastle United', 'Aston Villa', 'Everton FC', 'West Ham United'];
-export const teamNames = [...espTeams, ...engTeams];
+export const itaTeams = ['Juventus', 'Inter', 'AC Milan', 'Napoli', 'AS Roma', 'Lazio', 'Atalanta', 'Fiorentina'];
+export const fraTeams = ['Paris SG', 'Olympique de Marseille', 'Olympique Lyonnais', 'AS Monaco', 'LOSC Lille'];
+export const gerTeams = ['Bayern München', 'Borussia Dortmund', 'Bayer 04 Leverkusen', 'RB Leipzig', 'Eintracht Frankfurt'];
+export const teamNames = [...espTeams, ...engTeams, ...itaTeams, ...fraTeams, ...gerTeams];
 
 function randomName() {
   return `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
@@ -58,10 +61,16 @@ export async function createNewLeague(
       initialPrestige = Math.min(85, Math.max(50, Math.round((baseOvr - 60) * 2.8)));
     }
 
+    let domesticLeague = 'Premier League';
+    if (espTeams.includes(tname)) domesticLeague = 'LaLiga';
+    else if (itaTeams.includes(tname)) domesticLeague = 'Serie A';
+    else if (fraTeams.includes(tname)) domesticLeague = 'Ligue 1';
+    else if (gerTeams.includes(tname)) domesticLeague = 'Bundesliga';
+
     const pop = randomInt(1000000, 12000000);
     const teamId = await db.teams.add({
       leagueId,
-      domesticLeague: isEsp ? 'LaLiga' : 'Premier League',
+      domesticLeague,
       name: tname,
       overall: fifaMatch ? fifaMatch.overall : randomInt(76, 85),
       prestige: initialPrestige,

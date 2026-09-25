@@ -158,10 +158,10 @@ export function Dashboard() {
           </div>
 
           <div className="dash-hero-badge">
-            <Zap size={18} color="#38bdf8" />
+            <Zap size={18} color={team?.boardConfidence && team.boardConfidence < 40 ? '#ef4444' : '#38bdf8'} />
             <div>
-              <span className="lbl">Reputación Mánager</span>
-              <strong className="val">{league?.managerReputation || 60} pts</strong>
+              <span className="lbl">Confianza Directiva</span>
+              <strong className="val">{team?.boardConfidence ?? 100}%</strong>
             </div>
           </div>
 
@@ -406,6 +406,8 @@ export function Dashboard() {
                         <Link to={`/l/${leagueId}/player/${p.id}`} className="player-link">
                           {p.name}
                         </Link>
+                        {p.isInjured && <span title={`Lesionado: ${p.injuryType || 'Desconocido'} (${p.injuryWeeks} sem)`} style={{marginLeft:'5px'}}>🏥</span>}
+                        {p.cards?.suspended && <span title="Suspendido (Roja)" style={{marginLeft:'5px'}}>🟥</span>}
                       </td>
                       <td>{p.age}</td>
                       <td className="col-ovr">{p.overall}</td>

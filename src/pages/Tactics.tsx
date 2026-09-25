@@ -412,7 +412,7 @@ export function Tactics() {
                           {penalty > 0 && <AlertTriangle size={10} color="#ef4444" style={{ marginLeft: 2 }} />}
                         </div>
                         <div className="token-name">
-                          {occupant.unhappy ? '😠 ' : ''}{occupant.injuryWeeks ? '🚑 ' : ''}{occupant.name.split(' ').pop()}
+                          {occupant.unhappy ? '😠 ' : ''}{occupant.isInjured ? '🚑 ' : ''}{occupant.cards?.suspended ? '🟥 ' : ''}{occupant.name.split(' ').pop()}
                         </div>
                         <div style={{ fontSize: '0.55rem', color: (100 - (occupant.fatigue || 0)) < 70 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
                           ⚡ {100 - (occupant.fatigue || 0)}%
@@ -475,8 +475,10 @@ export function Tactics() {
                           </span>
                         </td>
                         <td>
-                          {p.injuryWeeks ? (
+                          {p.isInjured ? (
                             <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold' }}>🚑 Lesionado ({p.injuryWeeks} sem)</span>
+                          ) : p.cards?.suspended ? (
+                            <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold' }}>🟥 Suspendido</span>
                           ) : (
                             <span style={{ color: '#10b981', fontSize: '0.8rem' }}>Disponible</span>
                           )}

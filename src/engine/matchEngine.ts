@@ -12,7 +12,7 @@ function pickWeighted(players: Player[], positions: string[]): Player | null {
   return pickRandom(players) || null;
 }
 
-export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: Team, week: number, type: 'league' | 'cup' | 'continental'): Promise<Match> {
+export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: Team, week: number, type: 'league' | 'cup' | 'continental' | 'europa'): Promise<Match> {
   let homeScore = 0;
   let awayScore = 0;
   const events: any[] = [];
@@ -21,7 +21,11 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
   const awayPlayers = await db.players.where('teamId').equals(awayTeam.id!).toArray();
   
   // Very simple lineup: 1 POR, 4 DEF, 4 MED, 2 DEL
-  const getLineup = (players: Player[]) => {
+  const getLineup = (allPlayers: Player[]) => {
+    // Filter out injured and suspended players if possible
+    let players = allPlayers.filter(p => !p.isInjured && !p.cards?.suspended);
+    if (players.length < 11) players = allPlayers; // Fallback to everyone if not enough healthy players
+
     const por = players.filter(p => p.position === 'POR').sort((a,b)=>b.overall-a.overall).slice(0, 1);
     const def = players.filter(p => p.position === 'DEF').sort((a,b)=>b.overall-a.overall).slice(0, 4);
     const med = players.filter(p => p.position === 'MED').sort((a,b)=>b.overall-a.overall).slice(0, 4);
@@ -61,8 +65,36 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
     const atkPlayer = pickRandom(atkLineup.filter(p => p.position !== 'POR')) || atkLineup[0];
     const defPlayer = pickRandom(defLineup.filter(p => p.position !== 'POR')) || defLineup[0];
 
-    const atkAtts = atkPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
-    const defAtts = defPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+    const rawAtkAtts = atkPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+    const rawDefAtts = defPlayer.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+
+    const getEff = (p: Player, atts: any, stat: string) => {
+        let v = (atts as any)[stat] || 50;
+        const fat = p.fatigue || 0;
+        if (fat > 40) v -= v * ((fat - 40) / 60) * 0.3; // Up to 30% penalty for fatigue
+        if (p.unhappy) v *= 0.85;
+        else if ((p.morale || 80) > 85) v *= 1.05;
+        else if ((p.morale || 80) < 40) v *= 0.90;
+        return v;
+    };
+
+    const atkAtts = {
+      pace: getEff(atkPlayer, rawAtkAtts, 'pace'),
+      shooting: getEff(atkPlayer, rawAtkAtts, 'shooting'),
+      passing: getEff(atkPlayer, rawAtkAtts, 'passing'),
+      dribbling: getEff(atkPlayer, rawAtkAtts, 'dribbling'),
+      defending: getEff(atkPlayer, rawAtkAtts, 'defending'),
+      physical: getEff(atkPlayer, rawAtkAtts, 'physical')
+    };
+    
+    const defAtts = {
+      pace: getEff(defPlayer, rawDefAtts, 'pace'),
+      shooting: getEff(defPlayer, rawDefAtts, 'shooting'),
+      passing: getEff(defPlayer, rawDefAtts, 'passing'),
+      dribbling: getEff(defPlayer, rawDefAtts, 'dribbling'),
+      defending: getEff(defPlayer, rawDefAtts, 'defending'),
+      physical: getEff(defPlayer, rawDefAtts, 'physical')
+    };
 
     // Tactical Style Modifiers
     const atkStyle = attackingTeam.tacticalStyle || 'Tiki-Taka (Posesión)';
@@ -127,9 +159,22 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
              defPlayer.stats.foulsCommitted++;
              atkPlayer.stats.foulsReceived++;
              state.possessionTeam = attackingTeam; // free kick
+             
+             // Card check
              if (Math.random() < 0.1) {
-                defPlayer.stats.yellowCards++;
-                events.push({ type: 'yellow_card', playerId: defPlayer.id!, teamId: defendingTeam.id!, minute });
+                if (!defPlayer.cards) defPlayer.cards = { yellow: 0, red: 0, suspended: false };
+                
+                // Straight red or second yellow
+                if (Math.random() < 0.05 || defPlayer.cards.yellow >= 1) {
+                   defPlayer.stats.redCards++;
+                   defPlayer.cards.red++;
+                   defPlayer.cards.suspended = true;
+                   events.push({ type: 'red_card', playerId: defPlayer.id!, teamId: defendingTeam.id!, minute });
+                } else {
+                   defPlayer.stats.yellowCards++;
+                   defPlayer.cards.yellow++;
+                   events.push({ type: 'yellow_card', playerId: defPlayer.id!, teamId: defendingTeam.id!, minute });
+                }
              }
           } else {
              state.possessionTeam = defendingTeam;
@@ -163,9 +208,12 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
             }
             
             const gk = defLineup.find(p => p.position === 'POR') || defLineup[0];
-            const gkAtts = gk.attributes || defAtts;
-            const shootRoll = Math.random() * 100 + ((receiver.attributes?.shooting||50) * 0.6);
-            const saveRoll = Math.random() * 100 + (gkAtts.defending * 0.6);
+            const rawGkAtts = gk.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+            const gkDef = getEff(gk, rawGkAtts, 'defending') || gk.overall;
+            const receiverShooting = getEff(receiver, receiver.attributes || { shooting: 50 }, 'shooting') || receiver.overall;
+
+            const shootRoll = Math.random() * 100 + (receiverShooting * 0.6);
+            const saveRoll = Math.random() * 100 + (gkDef * 0.6);
             
             if (shootRoll > saveRoll) { // Shot on target
                receiver.stats.shotsOnTarget++;
@@ -207,9 +255,11 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
          atkPlayer.stats.xG += xG;
          
          const gk = defLineup.find(p => p.position === 'POR') || defLineup[0];
-         const gkAtts = gk.attributes || defAtts;
+         const rawGkAtts = gk.attributes || { pace: 50, shooting: 50, passing: 50, dribbling: 50, defending: 50, physical: 50 };
+         const gkDef = getEff(gk, rawGkAtts, 'defending') || gk.overall;
+         
          const shootRoll = Math.random() * 100 + (atkAtts.shooting * 0.6);
-         const saveRoll = Math.random() * 100 + (gkAtts.defending * 0.6);
+         const saveRoll = Math.random() * 100 + (gkDef * 0.6);
          
          if (shootRoll > saveRoll) {
             atkPlayer.stats.shotsOnTarget++;
@@ -234,7 +284,7 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
   }
 
   // Final updates (clean sheets & penalty shootout for knockouts)
-  if ((type === 'cup' || type === 'continental') && homeScore === awayScore) {
+  if ((type === 'cup' || type === 'continental' || type === 'europa') && homeScore === awayScore) {
     // Decide winner by penalty shootout / extra time
     const homeAdv = homeTeam.overall + (homeTeam.prestige || 50) * 0.2 + Math.random() * 15;
     const awayAdv = awayTeam.overall + (awayTeam.prestige || 50) * 0.2 + Math.random() * 15;
@@ -256,10 +306,29 @@ export async function simulateMatch(leagueId: number, homeTeam: Team, awayTeam: 
     if (awayGk) awayGk.stats.cleanSheets++;
   }
 
-  // Cap stats properly
+  // Cap stats properly and apply Fatigue, Injuries, Cards
   [...homeLineup, ...awayLineup].forEach(p => {
     p.stats.xA = parseFloat(p.stats.xA.toFixed(2));
     p.stats.xG = parseFloat(p.stats.xG.toFixed(2));
+    
+    // Fatigue increase (Base 5-15% per game)
+    const currentFatigue = p.fatigue || 0;
+    p.fatigue = Math.min(100, currentFatigue + 5 + Math.random() * 10);
+    
+    // Injury Check
+    const team = p.teamId === homeTeam.id ? homeTeam : awayTeam;
+    const healthLevel = team.healthExpense || 50; 
+    const injuryProne = p.injuryProne || 50;
+    const fatigueFactor = p.fatigue / 100;
+    
+    const injuryChance = 0.01 + (fatigueFactor * 0.03) + (injuryProne / 100 * 0.02) - (healthLevel / 100 * 0.02);
+    
+    if (!p.isInjured && Math.random() < Math.max(0.005, injuryChance)) {
+       p.isInjured = true;
+       p.injuryWeeks = Math.floor(Math.random() * 6) + 1; // 1 to 6 weeks
+       const types = ['Esguince de tobillo', 'Desgarro muscular', 'Sobrecarga', 'Lesión de rodilla', 'Fractura menor'];
+       p.injuryType = types[Math.floor(Math.random() * types.length)];
+    }
   });
 
   await db.players.bulkPut([...homeLineup, ...awayLineup]);

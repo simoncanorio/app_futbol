@@ -1,4 +1,4 @@
-import { db, getInitialPlayerStats, isTransferWindowOpen } from '../db/db';
+import { db, getInitialPlayerStats, isTransferWindowOpen, type Player } from '../db/db';
 import { simulateMatch } from './matchEngine';
 import { generateLeagueFixtures } from './fixtureGenerator';
 import { processAITransfers } from './aiTransfers';
@@ -110,6 +110,35 @@ export async function advanceWeek(leagueId: number) {
     home.budget += weeklyProfit;
   }
 
+  // Board Confidence Logic for User Team
+  if (league.userTeamId) {
+    const userTeam = teamMap.get(league.userTeamId);
+    if (userTeam) {
+       const m = currentMatches.find(cm => cm.homeTeamId === userTeam.id || cm.awayTeamId === userTeam.id);
+       if (m && m.isPlayed) {
+          const isHome = m.homeTeamId === userTeam.id;
+          const userScore = isHome ? m.homeScore : m.awayScore;
+          const oppScore = isHome ? m.awayScore : m.homeScore;
+          
+          if (userTeam.boardConfidence === undefined) userTeam.boardConfidence = 100;
+          
+          if (userScore > oppScore) {
+             userTeam.boardConfidence = Math.min(100, userTeam.boardConfidence + 5);
+          } else if (userScore < oppScore) {
+             userTeam.boardConfidence = Math.max(0, userTeam.boardConfidence - 10);
+          }
+          
+          if (userTeam.boardConfidence <= 0) {
+             // FIRED
+             league.userTeamId = null;
+             await db.leagues.put(league);
+             // We can fire an event to let the UI know
+             window.dispatchEvent(new CustomEvent('manager_fired'));
+          }
+       }
+    }
+  }
+
   // Update Player Fatigue, Morale & Injury Recovery (Task 1 & 13)
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
@@ -143,6 +172,12 @@ export async function advanceWeek(leagueId: number) {
 
     if ((p.morale || 85) < 35) {
       p.unhappy = true;
+      p.transferRequest = true; // Player demands to leave
+    }
+
+    if (p.cards?.suspended) {
+      p.cards.suspended = false; // Clear suspension after a week
+      p.cards.red = 0;
     }
   }
   await db.players.bulkPut(allPlayers);
@@ -199,11 +234,17 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
     }
   }
 
-  // 2. Champions League Knockouts (Weeks 27 League Phase -> 31 Octavos -> 33 Cuartos -> 35 Semis -> 38 Final)
+  // 2. Continental and Europa League Knockouts
+  await generateContinentalKnockouts(leagueId, currentWeek, 'continental');
+  await generateContinentalKnockouts(leagueId, currentWeek, 'europa');
+}
+
+async function generateContinentalKnockouts(leagueId: number, currentWeek: number, type: 'continental' | 'europa') {
+  // Knockouts (Weeks 27 League Phase -> 31 Octavos -> 33 Cuartos -> 35 Semis -> 38 Final)
   if (currentWeek === 27) {
     const playedCL = await db.matches
       .where('leagueId').equals(leagueId)
-      .filter(m => m.type === 'continental' && m.isPlayed)
+      .filter(m => m.type === type && m.isPlayed)
       .toArray();
 
     const teamPointsMap = new Map<number, { pts: number; gd: number }>();
@@ -225,7 +266,7 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
 
     const existingOctavos = await db.matches
       .where('leagueId').equals(leagueId)
-      .filter(m => m.type === 'continental' && m.week === 31)
+      .filter(m => m.type === type && m.week === 31)
       .count();
 
     if (existingOctavos === 0 && sortedTeams.length >= 4) {
@@ -241,7 +282,7 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
           awayScore: 0,
           week: 31,
           isPlayed: false,
-          type: 'continental',
+          type: type,
           events: []
         });
       }
@@ -250,18 +291,18 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
   } else if ([31, 33, 35].includes(currentWeek)) {
     const clMatches = await db.matches
       .where('leagueId').equals(leagueId)
-      .filter(m => m.type === 'continental' && m.week === currentWeek && m.isPlayed)
+      .filter(m => m.type === type && m.week === currentWeek && m.isPlayed)
       .toArray();
 
     if (clMatches.length > 0) {
       const winners: number[] = clMatches.map(m => m.homeScore > m.awayScore ? m.homeTeamId : m.awayTeamId);
       let nextWeek = 33;
       if (currentWeek === 33) nextWeek = 35;
-      if (currentWeek === 35) nextWeek = 38; // Final de Champions
+      if (currentWeek === 35) nextWeek = 38; // Final
 
       const existingNextMatches = await db.matches
         .where('leagueId').equals(leagueId)
-        .filter(m => m.type === 'continental' && m.week === nextWeek)
+        .filter(m => m.type === type && m.week === nextWeek)
         .count();
 
       if (existingNextMatches === 0 && winners.length >= 2) {
@@ -275,7 +316,7 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
             awayScore: 0,
             week: nextWeek,
             isPlayed: false,
-            type: 'continental',
+            type: type,
             events: []
           });
         }
@@ -304,6 +345,19 @@ export async function startNextSeason(leagueId: number) {
     : allTeams.sort((a,b)=>b.overall-a.overall)[0]?.id;
 
   const championsLeagueWinner = allTeams.find(t => t.id === championsLeagueWinnerId);
+
+  // 1b. Europa League Winner
+  const elFinalMatch = await db.matches
+    .where('leagueId').equals(leagueId)
+    .filter(m => m.type === 'europa' && m.isPlayed)
+    .reverse()
+    .first();
+  
+  const europaLeagueWinnerId = elFinalMatch
+    ? (elFinalMatch.homeScore > elFinalMatch.awayScore ? elFinalMatch.homeTeamId : elFinalMatch.awayTeamId)
+    : undefined;
+
+  const europaLeagueWinner = allTeams.find(t => t.id === europaLeagueWinnerId);
 
   // 2. Copa Winner (Week 36 or latestPlayed cup)
   const cupFinalMatch = await db.matches
@@ -335,6 +389,7 @@ export async function startNextSeason(leagueId: number) {
       let prestige = t.prestige || 70;
       if (rankIdx === 0) prestige = Math.min(100, prestige + 2); // Liga winner
       if (t.id === championsLeagueWinnerId) prestige = Math.min(100, prestige + 5); // UCL winner
+      if (t.id === europaLeagueWinnerId) prestige = Math.min(100, prestige + 3); // UEL winner
       if (t.id === cupWinnerId) prestige = Math.min(100, prestige + 3); // Cup winner
       if (rankIdx >= sorted.length - 3) prestige = Math.max(20, prestige - 20); // Relegated
 
@@ -364,7 +419,8 @@ export async function startNextSeason(leagueId: number) {
     bestKeeperId: 1,
     goldenBoyId: 1,
     cupChampionId: cupWinnerId,
-    championsLeagueChampionId: championsLeagueWinnerId
+    championsLeagueChampionId: championsLeagueWinnerId,
+    europaLeagueChampionId: europaLeagueWinnerId
   } as any);
 
   // Record GM History for user team
@@ -379,6 +435,7 @@ export async function startNextSeason(leagueId: number) {
       if (pos === 1) titlesWon.push(userTeam.domesticLeague);
       if (userTeam.id === cupWinnerId) titlesWon.push('Copa del Rey / FA Cup');
       if (userTeam.id === championsLeagueWinnerId) titlesWon.push('UEFA Champions League');
+      if (userTeam.id === europaLeagueWinnerId) titlesWon.push('UEFA Europa League');
 
       await db.gmHistory.add({
         leagueId: league.id!,
@@ -428,7 +485,38 @@ export async function startNextSeason(leagueId: number) {
       }
     }
   }
-  await db.players.bulkPut(allPlayers);
+  
+  // Retirements & Regens
+  const playersToDelete = allPlayers.filter(p => p.age >= 36);
+  const remainingPlayers = allPlayers.filter(p => p.age < 36);
+  
+  // Generate Regens for each retired player
+  const newRegens: Player[] = playersToDelete.map(retired => ({
+    leagueId,
+    teamId: null,
+    name: `Regen de ${retired.name}`,
+    age: 16 + Math.floor(Math.random() * 3), // 16-18
+    overall: 55 + Math.floor(Math.random() * 15),
+    potential: 75 + Math.floor(Math.random() * 20),
+    position: retired.position,
+    specificPosition: retired.specificPosition,
+    contract: 5000,
+    stats: getInitialPlayerStats(),
+    developmentType: 'normal',
+    morale: 100,
+    fatigue: 0,
+    isInjured: false,
+    unhappy: false
+  }));
+  
+  if (playersToDelete.length > 0) {
+     await db.players.bulkDelete(playersToDelete.map(p => p.id!));
+  }
+  if (newRegens.length > 0) {
+     await db.players.bulkAdd(newRegens);
+  }
+
+  await db.players.bulkPut(remainingPlayers);
 
   // 3. Clear old matches and generate fresh 38-matchday schedule for new season
   await db.matches.where('leagueId').equals(leagueId).delete();

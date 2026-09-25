@@ -159,6 +159,9 @@ export interface Player {
   developmentType?: 'early_bloomer' | 'normal' | 'late_bloomer' | 'bust';
   morale?: number; // 0 to 100% (High = happy, Low = wants to leave!)
   unhappy?: boolean;
+  transferRequest?: boolean;
+  injuryType?: string;
+  cards?: { yellow: number; red: number; suspended: boolean };
   releaseClause?: number; // Cláusula de rescisión obligatoria
 }
 
@@ -186,6 +189,13 @@ export interface Team {
   healthExpense?: number;
   facilitiesExpense?: number;
   hype?: number;
+  boardConfidence?: number; // 0 to 100
+  seasonObjective?: string;
+  facilities?: {
+    stadiumLevel: number; // 1 to 5
+    youthLevel: number; // 1 to 5
+    trainingLevel: number; // 1 to 5
+  };
   mainSponsor?: {
     name: string;
     payoutPerSeason: number;
@@ -207,7 +217,7 @@ export interface Match {
   awayScore: number;
   week: number;
   isPlayed: boolean;
-  type: 'league' | 'cup' | 'continental';
+  type: 'league' | 'cup' | 'continental' | 'europa';
   events?: {
     type: 'goal' | 'yellow_card' | 'red_card';
     playerId: number;
