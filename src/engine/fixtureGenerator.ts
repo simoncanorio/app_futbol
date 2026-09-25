@@ -35,7 +35,7 @@ export function createDoubleRoundRobinFixtures(teams: Team[], leagueId: number):
     teamIndices.splice(1, 0, teamIndices.pop()!);
   }
 
-  // Leg 1
+  // Leg 1 (Jornadas 1 a 19)
   for (let r = 0; r < roundList.length; r++) {
     const weekNum = r + 1;
     for (const match of roundList[r]) {
@@ -53,7 +53,7 @@ export function createDoubleRoundRobinFixtures(teams: Team[], leagueId: number):
     }
   }
 
-  // Leg 2
+  // Leg 2 (Jornadas 20 a 38)
   for (let r = 0; r < roundList.length; r++) {
     const weekNum = numRounds + r + 1;
     for (const match of roundList[r]) {
@@ -86,22 +86,30 @@ export async function generateLeagueFixtures(leagueId: number) {
 
   const allFixtures: Omit<Match, 'id'>[] = [];
 
-  // League fixtures
+  // 1. League fixtures (38 jornadas)
   for (const domLeague in leaguesMap) {
     const domTeams = leaguesMap[domLeague];
     const fixtures = createDoubleRoundRobinFixtures(domTeams, leagueId);
     allFixtures.push(...fixtures);
   }
 
-  // Cup Fixtures (Copa Nacional - Weeks 10, 20, 30)
-  const cupWeeks = [10, 20, 30];
+  // 2. Cup Fixtures (Copa Nacional / Copa del Rey - Distributed Knockout Schedule)
+  // 16avos (Semana 8), 8vos (Semana 15), 4tos (Semana 22), Semifinales (Semana 29), Final (Semana 36)
+  const cupSchedule = [
+    { week: 8, roundName: '16avos de Final' },
+    { week: 15, roundName: 'Octavos de Final' },
+    { week: 22, roundName: 'Cuartos de Final' },
+    { week: 29, roundName: 'Semifinales' },
+    { week: 36, roundName: 'Gran Final de Copa' }
+  ];
+
   for (const domLeague in leaguesMap) {
-    const domTeams = leaguesMap[domLeague];
+    const domTeams = [...leaguesMap[domLeague]];
     if (domTeams.length >= 4) {
       domTeams.sort((a, b) => b.overall - a.overall);
-      cupWeeks.forEach((w, idx) => {
+      cupSchedule.forEach((stage, idx) => {
         const homeT = domTeams[idx % domTeams.length];
-        const awayT = domTeams[(idx + 2) % domTeams.length];
+        const awayT = domTeams[(idx + 3) % domTeams.length];
         if (homeT && awayT && homeT.id !== awayT.id) {
           allFixtures.push({
             leagueId,
@@ -109,7 +117,7 @@ export async function generateLeagueFixtures(leagueId: number) {
             awayTeamId: awayT.id!,
             homeScore: 0,
             awayScore: 0,
-            week: w,
+            week: stage.week,
             isPlayed: false,
             type: 'cup',
             events: []
@@ -119,13 +127,26 @@ export async function generateLeagueFixtures(leagueId: number) {
     }
   }
 
-  // Continental Champions League Fixtures (Weeks 6, 12, 18, 24, 28, 34)
-  const champWeeks = [6, 12, 18, 24, 28, 34];
-  const topTeams = [...teams].sort((a, b) => b.overall - a.overall).slice(0, 8);
+  // 3. UEFA Champions League Fixtures
+  // Fase de Liga (Semanas 4, 9, 14, 19, 24, 27) + Knockout Playoffs (8vos W31, 4tos W33, Semis W35, Final W38)
+  const championsLeagueSchedule = [
+    { week: 4, roundName: 'Fase de Liga - Jornada 1' },
+    { week: 9, roundName: 'Fase de Liga - Jornada 2' },
+    { week: 14, roundName: 'Fase de Liga - Jornada 3' },
+    { week: 19, roundName: 'Fase de Liga - Jornada 4' },
+    { week: 24, roundName: 'Fase de Liga - Jornada 5' },
+    { week: 27, roundName: 'Fase de Liga - Jornada 6' },
+    { week: 31, roundName: 'Champions League - Octavos de Final' },
+    { week: 33, roundName: 'Champions League - Cuartos de Final' },
+    { week: 35, roundName: 'Champions League - Semifinales' },
+    { week: 38, roundName: 'Gran Final de Champions League' }
+  ];
+
+  const topTeams = [...teams].sort((a, b) => b.overall - a.overall).slice(0, 10);
   if (topTeams.length >= 4) {
-    champWeeks.forEach((w, idx) => {
+    championsLeagueSchedule.forEach((stage, idx) => {
       const homeT = topTeams[idx % topTeams.length];
-      const awayT = topTeams[(idx + 1) % topTeams.length];
+      const awayT = topTeams[(idx + 2) % topTeams.length];
       if (homeT && awayT && homeT.id !== awayT.id) {
         allFixtures.push({
           leagueId,
@@ -133,7 +154,7 @@ export async function generateLeagueFixtures(leagueId: number) {
           awayTeamId: awayT.id!,
           homeScore: 0,
           awayScore: 0,
-          week: w,
+          week: stage.week,
           isPlayed: false,
           type: 'continental',
           events: []

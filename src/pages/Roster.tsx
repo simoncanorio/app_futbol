@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League } from '../db/db';
+import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
 import { Tag, RefreshCw, AlertOctagon, CheckCircle2, XCircle, FileText } from 'lucide-react';
 
 export function Roster() {
@@ -177,7 +177,7 @@ export function Roster() {
                 <td style={{textAlign: 'center', cursor: 'pointer', width: '30px'}} onClick={() => toggleWatch(p)}>
                   <span style={{color: p.isWatched ? '#f59e0b' : '#475569', fontSize: '18px'}}>★</span>
                 </td>
-                <td style={{color: getPosColor(p.position), fontWeight: 'bold'}}>{p.position}</td>
+                <td style={{color: getPosColor(p.position), fontWeight: 'bold'}}>[{getSpecificPosition(p)}]</td>
                 <td>
                   <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none', fontWeight: 'bold'}}>
                     {p.name}

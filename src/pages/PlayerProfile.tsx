@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League } from '../db/db';
+import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { Target, Share2, Shield, Flame, Activity, Award, CheckCircle, RefreshCw, FileText } from 'lucide-react';
 
@@ -53,7 +53,7 @@ export function PlayerProfile() {
       <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: '12px', padding: '1.5rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center' }}>
         <div style={{ width: '120px', height: '140px', background: '#0f172a', border: '2px solid #38bdf8', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <div style={{ textAlign: 'center' }}>
-             <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#38bdf8' }}>{player.position}</div>
+             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#38bdf8' }}>[{getSpecificPosition(player)}]</div>
              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{player.bio?.country || 'Internacional'}</div>
           </div>
         </div>
@@ -62,7 +62,7 @@ export function PlayerProfile() {
           <h1 style={{ margin: '0 0 0.5rem 0', color: '#fff', fontSize: '2.2rem' }}>{player.name}</h1>
           <div style={{ color: '#aaa', fontSize: '14px', lineHeight: '1.7' }}>
             <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-              <span style={{ color: '#eab308', fontWeight: 'bold' }}>{player.position}</span>
+              <span style={{ color: '#eab308', fontWeight: 'bold' }}>Posición: [{getSpecificPosition(player)}] ({player.position})</span>
               <span>•</span>
               {team ? (
                 <Link to={`/l/${leagueId}/team/${team.id}`} style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold' }}>{team.name}</Link>

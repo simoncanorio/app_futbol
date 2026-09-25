@@ -139,6 +139,42 @@ const TACTICAL_STYLES: TacticalStyle[] = [
     bestAgainst: 'Contraataque Veloz',
     vulnerableTo: 'Tiki-Taka (Posesión)',
     possessionBonus: -20
+  },
+  {
+    name: 'Juego por las Bandas (Centros)',
+    description: 'Apertura de campo con extremos bien pegados a la cal y centros constantes al área.',
+    pros: 'Genera muchos saques de esquina y remates de cabeza de delanteros tanques.',
+    cons: 'Requiere laterales y extremos con gran atributo de pase y centro.',
+    bestAgainst: 'Bloque Bajo y Presión Zonal',
+    vulnerableTo: 'Gegenpressing (Presión Alta)',
+    possessionBonus: 4
+  },
+  {
+    name: 'Fútbol Directo (Balón Largo)',
+    description: 'Salida de balón directa saltándose la presión del medio campo rival.',
+    pros: 'Anula las presiones altas y genera segundas jugadas en campo contrario.',
+    cons: 'Baja precisión de pase y posesión dividida.',
+    bestAgainst: 'Gegenpressing (Presión Alta)',
+    vulnerableTo: 'Juego de Posición (Juego de Autor)',
+    possessionBonus: -12
+  },
+  {
+    name: 'Juego de Posición (Juego de Autor)',
+    description: 'Ocupación racional del terreno de juego para crear superioridades por dentro.',
+    pros: 'Gran fluidez ofensiva y remates claros en el área chica.',
+    cons: 'Exige mucha calidad técnica en los centrocampistas.',
+    bestAgainst: 'Fútbol Directo (Balón Largo)',
+    vulnerableTo: 'Contraataque Veloz',
+    possessionBonus: 12
+  },
+  {
+    name: 'Bloque Bajo y Presión Zonal',
+    description: 'Defensa zonal en campo propio cerrando los pasillos interiores.',
+    pros: 'Dificulta enormemente los pases filtrados por el centro.',
+    cons: 'Concede espacio en las bandas para centros laterales.',
+    bestAgainst: 'Juego por las Bandas (Centros)',
+    vulnerableTo: 'Tiki-Taka (Posesión)',
+    possessionBonus: -15
   }
 ];
 

@@ -81,6 +81,7 @@ export async function createNewLeague(
           overall: fp.overall,
           potential: fp.potential,
           position: fp.position,
+          specificPosition: fp.specificPosition || (fp.position === 'POR' ? 'POR' : fp.position === 'DEF' ? 'DFC' : fp.position === 'MED' ? 'MC' : 'DC'),
           contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
           contractYears: randomInt(2, 5),
           contractEndSeason: startYear + randomInt(2, 5),
@@ -95,7 +96,11 @@ export async function createNewLeague(
       }
     } else {
       // Procedural generation fallback with realistic OVRs
-      const positions = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
+      const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
+      const specificPositions: ('POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = [
+        'POR', 'LI', 'DFC', 'DFC', 'LD', 'MCD', 'MC', 'MCO', 'MI' as any, 'EI', 'DC',
+        'POR', 'DFC', 'LD', 'MC', 'MCO', 'ED', 'DC', 'MC', 'LI'
+      ];
       for (let i = 0; i < 20; i++) {
         const overall = randomInt(70, 88);
         const potential = Math.min(99, overall + randomInt(0, 10));
@@ -106,7 +111,8 @@ export async function createNewLeague(
           age: randomInt(17, 34),
           overall,
           potential,
-          position: positions[i] as any,
+          position: positions[i],
+          specificPosition: specificPositions[i],
           contract: randomInt(1000000, 6000000),
           contractYears: randomInt(2, 4),
           contractEndSeason: startYear + randomInt(2, 4),
@@ -218,6 +224,7 @@ export async function createRealLeagueFromTransfermarkt(
             overall: fp.overall,
             potential: fp.potential,
             position: fp.position,
+            specificPosition: fp.specificPosition || (fp.position === 'POR' ? 'POR' : fp.position === 'DEF' ? 'DFC' : fp.position === 'MED' ? 'MC' : 'DC'),
             contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
             contractYears: randomInt(2, 5),
             contractEndSeason: startYear + randomInt(2, 5),
@@ -227,6 +234,43 @@ export async function createRealLeagueFromTransfermarkt(
               height: randomInt(172, 192),
               weight: randomInt(68, 88),
               country: fp.country
+            }
+          });
+        }
+      } else {
+        const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
+        const specificPositions: ('POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = [
+          'POR', 'LI', 'DFC', 'DFC', 'LD', 'MCD', 'MC', 'MCO', 'MI' as any, 'EI', 'DC',
+          'POR', 'DFC', 'LD', 'MC', 'MCO', 'ED', 'DC', 'MC', 'LI'
+        ];
+        for (let j = 0; j < 20; j++) {
+          const overall = randomInt(72, 85);
+          const potential = Math.min(99, overall + randomInt(0, 10));
+          dbPlayers.push({
+            leagueId,
+            teamId,
+            name: randomName(),
+            age: randomInt(17, 34),
+            overall,
+            potential,
+            position: positions[j],
+            specificPosition: specificPositions[j],
+            contract: randomInt(1000000, 5000000),
+            contractYears: randomInt(2, 4),
+            contractEndSeason: startYear + randomInt(2, 4),
+            stats: getInitialPlayerStats(),
+            attributes: {
+              pace: randomInt(55, 92),
+              shooting: randomInt(45, 90),
+              passing: randomInt(55, 92),
+              dribbling: randomInt(55, 92),
+              defending: randomInt(40, 88),
+              physical: randomInt(55, 88)
+            },
+            bio: {
+              height: randomInt(170, 194),
+              weight: randomInt(65, 88),
+              country: countries[Math.floor(Math.random() * countries.length)]
             }
           });
         }

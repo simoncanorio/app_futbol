@@ -113,6 +113,7 @@ export interface Player {
   overall: number;
   potential: number;
   position: 'POR' | 'DEF' | 'MED' | 'DEL';
+  specificPosition?: 'POR' | 'DFC' | 'LI' | 'LD' | 'CAD' | 'CAI' | 'MCD' | 'MC' | 'MCO' | 'MI' | 'MD' | 'EI' | 'ED' | 'DC' | 'SD';
   contract: number;
   stats: AdvancedPlayerStats;
   historicalStats?: Record<number, AdvancedPlayerStats>; // season -> stats
@@ -300,3 +301,26 @@ export class FootballDB extends Dexie {
 }
 
 export const db = new FootballDB();
+
+export function getSpecificPosition(p: Partial<Player>): string {
+  if (p.specificPosition) return p.specificPosition;
+  if (p.pitchPosition) return p.pitchPosition;
+  
+  if (p.position === 'POR') return 'POR';
+  if (p.position === 'DEF') {
+    const pace = p.attributes?.pace || 70;
+    return pace > 78 ? 'LI' : 'DFC';
+  }
+  if (p.position === 'MED') {
+    const passing = p.attributes?.passing || 70;
+    const shooting = p.attributes?.shooting || 70;
+    if (shooting > 78) return 'MCO';
+    if (passing > 82) return 'MC';
+    return 'MCD';
+  }
+  if (p.position === 'DEL') {
+    const pace = p.attributes?.pace || 75;
+    return pace > 88 ? 'EI' : 'DC';
+  }
+  return p.position || 'MC';
+}
