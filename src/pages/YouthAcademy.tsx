@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, formatMoney, getInitialPlayerStats } from '../db/db';
 import { CustomModal } from '../components/common/CustomModal';
-import { Sparkles, Dumbbell, Shield, Target, Zap, HeartPulse, Search, UserPlus, ArrowUpRight, Award } from 'lucide-react';
+import { Sparkles, Dumbbell, Shield, Target, Activity, HeartPulse, Search, UserPlus, ArrowUpRight, Award } from 'lucide-react';
 
 interface TrainingRegimeOption {
   id: 'balance' | 'attacking' | 'defending' | 'physical' | 'technical' | 'recovery';
@@ -41,7 +41,7 @@ const REGIMES: TrainingRegimeOption[] = [
   {
     id: 'technical',
     title: 'Tiki-Taka & Posesión',
-    icon: Zap,
+    icon: Activity,
     color: '#10b981',
     desc: 'Rondos a un toque, visión de juego, pases entre líneas y control orientado bajo presión.',
     effect: '+Probabilidad de aumento en Pases, Visión y Dribling para el mediocampo.'

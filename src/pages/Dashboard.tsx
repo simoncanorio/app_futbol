@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type League, type Team, type Player, type Match } from '../db/db';
-import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, Zap, ArrowRight, Activity, Heart, Play } from 'lucide-react';
+import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, ArrowRight, Activity, Heart, Play } from 'lucide-react';
 import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
 import { advanceWeek } from '../engine/gameLoop';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
@@ -214,7 +214,7 @@ export function Dashboard() {
           </div>
 
           <div className="dash-hero-badge">
-            <Zap size={18} color={team?.boardConfidence && team.boardConfidence < 40 ? '#ef4444' : '#38bdf8'} />
+            <Award size={18} color={team?.boardConfidence && team.boardConfidence < 40 ? '#ef4444' : '#38bdf8'} />
             <div>
               <span className="lbl">Confianza Directiva</span>
               <strong className="val">{team?.boardConfidence ?? 100}%</strong>

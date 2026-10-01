@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Player, type Team } from '../db/db';
 import { autoSelectLineupForTeam } from '../utils/lineupUtils';
-import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info, Sparkles, Heart } from 'lucide-react';
+import { Shield, Sliders, Award, CheckCircle, AlertTriangle, Info, Sparkles, Heart, Flame } from 'lucide-react';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './Tactics.css';
@@ -374,7 +374,7 @@ export function Tactics() {
           className={`tm-tab ${activeTab === 'styles' ? 'active' : ''}`}
           onClick={() => setActiveTab('styles')}
         >
-          <Zap size={16} /> Estilos Tácticos & Matriz de Contras
+          <Flame size={16} /> Estilos Tácticos & Matriz de Contras
         </button>
         <button
           className={`tm-tab ${activeTab === 'roles' ? 'active' : ''}`}
