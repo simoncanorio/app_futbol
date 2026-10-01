@@ -34,7 +34,6 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/roster`} className="nav-item">Plantilla</Link>
           <Link to={`/l/${leagueId}/tactics`} className="nav-item">Alineación</Link>
           <Link to={`/l/${leagueId}/youth_academy`} className="nav-item">Filial</Link>
-          <Link to={`/l/${leagueId}/kit_creator`} className="nav-item">🎨 Camisetas y Escudo</Link>
           <Link to={`/l/${leagueId}/schedule`} className="nav-item">Calendario</Link>
           <Link to={`/l/${leagueId}/finances`} className="nav-item">Finanzas</Link>
           <Link to={`/l/${leagueId}/history`} className="nav-item">Historia</Link>

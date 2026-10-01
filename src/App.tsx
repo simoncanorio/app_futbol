@@ -43,7 +43,6 @@ import { GMHistory } from './pages/GMHistory';
 import { SeasonSummary } from './pages/SeasonSummary';
 import { TransfermarktSearch } from './pages/TransfermarktSearch';
 import { ScoutingNetwork } from './pages/ScoutingNetwork';
-import { KitCreator } from './pages/KitCreator';
 import { DatabaseEditor } from './pages/DatabaseEditor';
 import { db, type League } from './db/db';
 import './App.css';
@@ -125,7 +124,6 @@ function App() {
         <Route path="/l/:leagueId/hall_of_fame" element={<LeagueLayout><HallOfFame /></LeagueLayout>} />
         <Route path="/l/:leagueId/draft" element={<LeagueLayout><Draft /></LeagueLayout>} />
         <Route path="/l/:leagueId/youth_academy" element={<LeagueLayout><YouthAcademy /></LeagueLayout>} />
-        <Route path="/l/:leagueId/kit_creator" element={<LeagueLayout><KitCreator /></LeagueLayout>} />
         
         <Route path="/l/:leagueId/game_log" element={<LeagueLayout><GameLog /></LeagueLayout>} />
         <Route path="/l/:leagueId/leaders" element={<LeagueLayout><LeagueLeaders /></LeagueLayout>} />
