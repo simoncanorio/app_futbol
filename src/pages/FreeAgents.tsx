@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type League, type Team, formatMoney } from '../db/db';
 import { DollarSign, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function FreeAgents() {
   const { leagueId } = useParams();
@@ -159,9 +160,12 @@ export function FreeAgents() {
                   <span style={{color: p.isWatched ? '#f59e0b' : '#475569', fontSize: '18px'}}>★</span>
                 </td>
                 <td style={{fontWeight: 'bold'}}>
-                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none'}}>
-                    {p.name}
-                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <PlayerAvatar player={p} size={26} />
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none'}}>
+                      {p.name}
+                    </Link>
+                  </div>
                 </td>
                 <td style={{ color: '#38bdf8', fontWeight: 'bold' }}>{p.position}</td>
                 <td>{p.age}</td>

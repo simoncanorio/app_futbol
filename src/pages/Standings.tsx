@@ -20,7 +20,14 @@ export function Standings() {
       const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
       const domLeagues = Array.from(new Set(allTeams.map(t => t.domesticLeague)));
       setDomesticLeagues(domLeagues);
-      if(domLeagues.length > 0 && !domLeagues.includes(selectedDomestic)) {
+      if (l.userTeamId) {
+        const uTeam = allTeams.find(t => t.id === l.userTeamId);
+        if (uTeam?.domesticLeague) {
+          setSelectedDomestic(uTeam.domesticLeague);
+        } else if (domLeagues.length > 0) {
+          setSelectedDomestic(domLeagues[0]);
+        }
+      } else if (domLeagues.length > 0 && !domLeagues.includes(selectedDomestic)) {
         setSelectedDomestic(domLeagues[0]);
       }
 
@@ -31,7 +38,13 @@ export function Standings() {
 
   const displayedTeams = teams
     .filter(t => t.domesticLeague === selectedDomestic)
-    .sort((a, b) => b.wins - a.wins || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
+    .sort((a, b) => {
+      const ptsA = (a.wins * 3) + a.draws;
+      const ptsB = (b.wins * 3) + b.draws;
+      const gdA = a.goalsFor - a.goalsAgainst;
+      const gdB = b.goalsFor - b.goalsAgainst;
+      return ptsB - ptsA || gdB - gdA || b.goalsFor - a.goalsFor;
+    });
 
   return (
     <div className="page-container standings-page">

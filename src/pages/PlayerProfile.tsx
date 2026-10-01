@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
-import { Target, Share2, Shield, Flame, Activity, Award, CheckCircle, RefreshCw, FileText } from 'lucide-react';
+import { Target, Share2, Shield, Flame, Activity, Award, CheckCircle, RefreshCw, FileText, Search } from 'lucide-react';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
+import { ContractNegotiationModal } from '../components/common/ContractNegotiationModal';
 
 export function PlayerProfile() {
   const { leagueId, playerId } = useParams();
   const [player, setPlayer] = useState<Player | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [league, setLeague] = useState<League | null>(null);
+  const [showContractModal, setShowContractModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'all_stats' | 'attack' | 'passing' | 'defense' | 'discipline'>('all_stats');
 
   useEffect(() => {
@@ -17,6 +21,10 @@ export function PlayerProfile() {
       const pid = Number(playerId);
       const l = await db.leagues.get(lid);
       setLeague(l || null);
+      if (l && l.userTeamId) {
+        const ut = await db.teams.get(l.userTeamId);
+        setUserTeam(ut || null);
+      }
       
       const p = await db.players.get(pid);
       if (p) {
@@ -51,10 +59,11 @@ export function PlayerProfile() {
     <div className="page-container" style={{maxWidth: '1200px', margin: '0 auto'}}>
       {/* HEADER SECTION */}
       <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: '12px', padding: '1.5rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center' }}>
-        <div style={{ width: '120px', height: '140px', background: '#0f172a', border: '2px solid #38bdf8', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <div style={{ textAlign: 'center' }}>
-             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#38bdf8' }}>[{getSpecificPosition(player)}]</div>
-             <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{player.bio?.country || 'Internacional'}</div>
+        <div style={{ width: '130px', height: '145px', background: '#0f172a', border: '2px solid #38bdf8', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '6px' }}>
+          <PlayerAvatar player={player} size={85} />
+          <div style={{ textAlign: 'center', marginTop: '4px' }}>
+             <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#38bdf8' }}>[{getSpecificPosition(player)}]</div>
+             <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{player.bio?.country || 'Internacional'}</div>
           </div>
         </div>
         
@@ -75,21 +84,71 @@ export function PlayerProfile() {
             <div>Salario: <strong>${(player.contract / 1000000).toFixed(2)}M/año</strong> | Contrato: <strong>{player.contractYears || 2} Años restantes</strong></div>
             {player.isTransferListed && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🏷️ Declarado Transferible</span>}
             {player.isOnLoan && <span style={{ color: '#fbbf24', fontWeight: 'bold', marginLeft: '0.5rem' }}>🔄 Cedido en préstamo</span>}
+
+            {userTeam && (
+              <div style={{ marginTop: '0.65rem' }}>
+                <button
+                  onClick={() => setShowContractModal(true)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <FileText size={15} /> {player.teamId === userTeam.id ? 'Renovar Contrato' : 'Negociar Fichaje / Cesión'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <div style={{ textAlign: 'center', background: 'rgba(56, 189, 248, 0.1)', padding: '0.8rem 1.2rem', borderRadius: '10px', border: '1px solid #38bdf8' }}>
             <div style={{ color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>Overall</div>
             <div style={{ color: '#38bdf8', fontWeight: 'bold', fontSize: '2rem' }}>
               {player.overall}
             </div>
           </div>
-          <div style={{ textAlign: 'center', background: 'rgba(245, 158, 11, 0.1)', padding: '0.8rem 1.2rem', borderRadius: '10px', border: '1px solid #f59e0b' }}>
+          <div style={{ textAlign: 'center', background: 'rgba(245, 158, 11, 0.1)', padding: '0.8rem 1.2rem', borderRadius: '10px', border: '1px solid #f59e0b', minWidth: '110px' }}>
             <div style={{ color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>Potencial</div>
-            <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '2rem' }}>
-              {player.potential}
-            </div>
+            {(!userTeam || player.teamId === userTeam.id || player.isScouted) ? (
+              <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '2rem' }}>
+                {player.potential}
+              </div>
+            ) : (
+              <div>
+                <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '1.25rem' }}>
+                  {Math.max(50, player.potential - 4)} - {Math.min(99, player.potential + 4)}
+                </div>
+                <button
+                  onClick={async () => {
+                    player.isScouted = true;
+                    await db.players.put(player);
+                    setPlayer({ ...player });
+                  }}
+                  style={{
+                    marginTop: '4px',
+                    background: 'rgba(245, 158, 11, 0.2)',
+                    border: '1px solid #f59e0b',
+                    color: '#f59e0b',
+                    borderRadius: '4px',
+                    padding: '2px 6px',
+                    fontSize: '10px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🕵️ Ojear
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -300,6 +359,20 @@ export function PlayerProfile() {
 
         </div>
       </div>
+
+      {showContractModal && userTeam && (
+        <ContractNegotiationModal
+          player={player}
+          userTeam={userTeam}
+          isOpen={showContractModal}
+          mode={player.teamId === userTeam.id ? 'renewal' : (player.teamId ? 'loan' : 'signing')}
+          onSuccess={(updated) => {
+            setPlayer(updated);
+            setShowContractModal(false);
+          }}
+          onClose={() => setShowContractModal(false)}
+        />
+      )}
     </div>
   );
 }

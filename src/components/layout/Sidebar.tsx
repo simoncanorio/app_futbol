@@ -34,6 +34,7 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/roster`} className="nav-item">Plantilla</Link>
           <Link to={`/l/${leagueId}/tactics`} className="nav-item">Alineación</Link>
           <Link to={`/l/${leagueId}/youth_academy`} className="nav-item">Filial</Link>
+          <Link to={`/l/${leagueId}/kit_creator`} className="nav-item">🎨 Camisetas y Escudo</Link>
           <Link to={`/l/${leagueId}/schedule`} className="nav-item">Calendario</Link>
           <Link to={`/l/${leagueId}/finances`} className="nav-item">Finanzas</Link>
           <Link to={`/l/${leagueId}/history`} className="nav-item">Historia</Link>
@@ -78,6 +79,15 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/social_media`} className="nav-item">Redes Sociales</Link>
           <Link to={`/l/${leagueId}/press`} className="nav-item">Prensa</Link>
           <Link to={`/l/${leagueId}/relations`} className="nav-item">Relaciones Institucionales</Link>
+        </div>
+
+        <div className="nav-group">
+          <div className="nav-group-title">
+            <span style={{fontSize:'8px', marginRight:'4px'}}>▼</span> HERRAMIENTAS
+          </div>
+          <Link to={`/l/${leagueId}/database_editor`} className="nav-item" style={{color: '#a855f7', fontWeight: 600}}>
+            🛠️ Editor de Base de Datos
+          </Link>
         </div>
       </div>
     </div>

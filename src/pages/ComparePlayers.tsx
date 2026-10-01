@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Player } from '../db/db';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function ComparePlayers() {
   const { leagueId } = useParams();
@@ -81,12 +82,20 @@ export function ComparePlayers() {
             {/* Cabeceras (Siluetas/Nombres) */}
             <div style={{display: 'flex', padding: '2rem 0', background: '#111', borderBottom: '2px solid #e67e22'}}>
               <div style={{flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end'}}>
-                <div style={{width: '120px', height: '150px', background: '#222', borderRadius: '60px 60px 0 0', border: '2px solid #444', marginBottom: '1rem'}}></div>
+                {p1 ? (
+                  <div style={{ marginBottom: '1rem' }}><PlayerAvatar player={p1} size={100} /></div>
+                ) : (
+                  <div style={{width: '100px', height: '100px', background: '#222', borderRadius: '50%', border: '2px solid #444', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666'}}>?</div>
+                )}
                 <h3 style={{margin: 0, color: '#e67e22'}}>{p1 ? p1.name : '-'}</h3>
                 <small style={{color: '#888'}}>{p1 ? 'Activo' : ''}</small>
               </div>
               <div style={{flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end'}}>
-                <div style={{width: '120px', height: '150px', background: '#222', borderRadius: '60px 60px 0 0', border: '2px solid #444', marginBottom: '1rem'}}></div>
+                {p2 ? (
+                  <div style={{ marginBottom: '1rem' }}><PlayerAvatar player={p2} size={100} /></div>
+                ) : (
+                  <div style={{width: '100px', height: '100px', background: '#222', borderRadius: '50%', border: '2px solid #444', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666'}}>?</div>
+                )}
                 <h3 style={{margin: 0, color: '#e67e22'}}>{p2 ? p2.name : '-'}</h3>
                 <small style={{color: '#888'}}>{p2 ? 'Activo' : ''}</small>
               </div>

@@ -73,6 +73,8 @@ export function YouthAcademy() {
   const [league, setLeague] = useState<League | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [youthPlayers, setYouthPlayers] = useState<Player[]>([]);
+  const [veterans, setVeterans] = useState<Player[]>([]);
+  const [mentoringProspect, setMentoringProspect] = useState<Player | null>(null);
   const [promotingPlayer, setPromotingPlayer] = useState<Player | null>(null);
   const [isScouting, setIsScouting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -90,6 +92,32 @@ export function YouthAcademy() {
     const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
     const youth = p.filter(player => player.lineupStatus === 'youth');
     setYouthPlayers(youth.sort((a, b) => b.potential - a.potential));
+
+    const vets = p.filter(pl => pl.lineupStatus !== 'youth' && pl.age >= 27 && pl.overall >= 74);
+    setVeterans(vets);
+  };
+
+  const handleAssignMentor = async (prospect: Player, mentorId: number | null) => {
+    prospect.mentorId = mentorId || undefined;
+    if (mentorId) {
+      const mentor = veterans.find(v => v.id === mentorId);
+      if (mentor) {
+        if (mentor.overall >= 84 && prospect.potential < 95) {
+          prospect.potential = Math.min(99, prospect.potential + 2);
+        }
+        prospect.morale = Math.min(100, (prospect.morale || 80) + 12);
+      }
+    }
+    await db.players.put(prospect);
+    setYouthPlayers(prev => prev.map(yp => yp.id === prospect.id ? { ...prospect } : yp));
+    setMentoringProspect(null);
+    setStatusMsg({
+      text: mentorId
+        ? `¡Mentor asignado! ${prospect.name} ahora aprende de un veterano de la primera plantilla (+potencial y moral).`
+        : `Tutoría finalizada para ${prospect.name}.`,
+      type: 'success'
+    });
+    setTimeout(() => setStatusMsg(null), 4000);
   };
 
   useEffect(() => {
@@ -404,12 +432,14 @@ export function YouthAcademy() {
                 <th style={{ padding: '12px' }}>Potencial</th>
                 <th style={{ padding: '12px' }}>Progresión</th>
                 <th style={{ padding: '12px' }}>Reclutado</th>
+                <th style={{ padding: '12px' }}>Tutoría Veterana</th>
                 <th style={{ padding: '12px', textAlign: 'center' }}>Acción</th>
               </tr>
             </thead>
             <tbody>
               {youthPlayers.map(p => {
                 const growth = p.potential - p.overall;
+                const mentor = veterans.find(v => v.id === p.mentorId);
                 return (
                   <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <td style={{ padding: '12px', fontWeight: 'bold' }}>
@@ -465,6 +495,38 @@ export function YouthAcademy() {
                     <td style={{ padding: '12px', color: '#94a3b8', fontSize: '0.85rem' }}>
                       {p.recruitedYear ? `Temp. ${p.recruitedYear}` : 'Inicial'}
                     </td>
+                    <td style={{ padding: '12px' }}>
+                      {mentor ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.8rem', color: '#c084fc', fontWeight: 600 }}>
+                            🎓 {mentor.name} (OVR {mentor.overall})
+                          </span>
+                          <button
+                            onClick={() => setMentoringProspect(p)}
+                            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem' }}
+                            title="Cambiar mentor"
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setMentoringProspect(p)}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.74rem',
+                            borderRadius: '5px',
+                            background: 'rgba(168, 85, 247, 0.15)',
+                            color: '#c084fc',
+                            border: '1px solid rgba(168, 85, 247, 0.3)',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          + Tutoría
+                        </button>
+                      )}
+                    </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <button
                         onClick={() => setPromotingPlayer(p)}
@@ -486,7 +548,7 @@ export function YouthAcademy() {
               })}
               {youthPlayers.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                     <p style={{ margin: '0 0 1rem 0', fontSize: '1rem' }}>Tu equipo filial no tiene canteranos en este momento.</p>
                     <button
                       onClick={handleScoutTrials}
@@ -743,6 +805,136 @@ export function YouthAcademy() {
                   Finalizar Pruebas
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mentor Selection Modal */}
+      {mentoringProspect && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            maxWidth: '600px',
+            width: '100%',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+          }}>
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.15rem' }}>
+                  Asignar Tutor Veterano a {mentoringProspect.name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Los canteranos tutelados por veteranos experimentados aceleran su progreso y pueden desbloquear +2 de potencial extra.
+                </span>
+              </div>
+              <button
+                onClick={() => setMentoringProspect(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {mentoringProspect.mentorId && (
+                <button
+                  onClick={() => handleAssignMentor(mentoringProspect, null)}
+                  style={{
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#f87171',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  ❌ Desvincular Tutor Actual
+                </button>
+              )}
+
+              {veterans.length === 0 ? (
+                <p style={{ color: '#94a3b8', textAlign: 'center', padding: '1rem' }}>
+                  No tienes veteranos de más de 27 años en la primera plantilla con suficiente experiencia.
+                </p>
+              ) : (
+                veterans.map(vet => (
+                  <div
+                    key={vet.id}
+                    onClick={() => handleAssignMentor(mentoringProspect, vet.id!)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: mentoringProspect.mentorId === vet.id ? 'rgba(168, 85, 247, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                      border: mentoringProspect.mentorId === vet.id ? '1px solid #c084fc' : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{vet.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                        {vet.position} • {vet.age} años • Personalidad: {vet.personality || 'Leal'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 700, color: '#38bdf8' }}>OVR {vet.overall}</div>
+                      <div style={{ fontSize: '0.72rem', color: vet.overall >= 84 ? '#fbbf24' : '#94a3b8' }}>
+                        {vet.overall >= 84 ? '🌟 Gran Mentor (+2 Pot.)' : 'Tutor Estándar'}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              textAlign: 'right',
+              background: 'rgba(15, 23, 42, 0.6)'
+            }}>
+              <button
+                onClick={() => setMentoringProspect(null)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#334155',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

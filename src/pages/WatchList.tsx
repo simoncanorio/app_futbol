@@ -1,16 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player } from '../db/db';
+import { db, type Player, type Team } from '../db/db';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function WatchList() {
   const { leagueId } = useParams();
-  const [watchedPlayers, setWatchedPlayers] = useState<Player[]>([]);
+  const [watchedPlayers, setWatchedPlayers] = useState<(Player & { teamName?: string })[]>([]);
 
   useEffect(() => {
     async function load() {
       const lid = Number(leagueId);
-      const allPlayers = await db.players.where('leagueId').equals(lid).toArray();
-      setWatchedPlayers(allPlayers.filter(p => p.isWatched));
+      const [allPlayers, allTeams] = await Promise.all([
+        db.players.where('leagueId').equals(lid).toArray(),
+        db.teams.where('leagueId').equals(lid).toArray()
+      ]);
+      const teamMap = new Map<number, string>(allTeams.map(t => [t.id!, t.name]));
+      const watched = allPlayers.filter(p => p.isWatched).map(p => ({
+        ...p,
+        teamName: p.teamId ? (teamMap.get(p.teamId) || 'Club') : 'Agente Libre'
+      }));
+      setWatchedPlayers(watched);
     }
     load();
   }, [leagueId]);
@@ -43,7 +52,7 @@ export function WatchList() {
               <th>OVR</th>
               <th>POT</th>
               <th>Salary</th>
-              <th>Team ID</th>
+              <th>Club Actual</th>
             </tr>
           </thead>
           <tbody>
@@ -53,16 +62,19 @@ export function WatchList() {
                   <span style={{color: '#e67e22', fontSize: '18px'}}>★</span>
                 </td>
                 <td style={{fontWeight: 'bold'}}>
-                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#3b82f6', textDecoration: 'none'}}>
-                    {p.name}
-                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <PlayerAvatar player={p} size={26} />
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none'}}>
+                      {p.name}
+                    </Link>
+                  </div>
                 </td>
                 <td>{p.position}</td>
                 <td>{p.age}</td>
                 <td>{p.overall}</td>
                 <td>{p.potential}</td>
                 <td>${(p.contract / 1000000).toFixed(2)}M</td>
-                <td>{p.teamId ? `Team ${p.teamId}` : 'Free Agent'}</td>
+                <td>{p.teamName || 'Agente Libre'}</td>
               </tr>
             ))}
             {watchedPlayers.length === 0 && (

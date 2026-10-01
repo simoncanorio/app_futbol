@@ -72,6 +72,17 @@ export function Press() {
       setManagerReputation(nextRep);
     }
 
+    if (team?.id) {
+      const teamPlayers = await db.players.where('teamId').equals(team.id).toArray();
+      const moraleDelta = opt.repChange * 2;
+      for (const p of teamPlayers) {
+        p.morale = Math.min(100, Math.max(20, (p.morale || 80) + moraleDelta));
+        if (p.morale < 45) p.unhappy = true;
+        else if (p.morale > 65) p.unhappy = false;
+      }
+      await db.players.bulkPut(teamPlayers);
+    }
+
     setTimeout(() => {
       setSelectedReaction(null);
       if (currentQuestion < questions.length - 1) {

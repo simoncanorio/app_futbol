@@ -163,6 +163,8 @@ export interface Player {
   injuryType?: string;
   cards?: { yellow: number; red: number; suspended: boolean };
   releaseClause?: number; // Cláusula de rescisión obligatoria
+  mentorId?: number; // Id of veteran player mentoring this prospect
+  loanBuyObligation?: boolean; // If true, loan has mandatory purchase clause
 }
 
 export interface Team {

@@ -1,29 +1,35 @@
 import { db, getInitialPlayerStats } from './db';
 import { tmService, mapTMPositionToDB, mapMarketValueToOVR } from '../services/transfermarkt';
 import { EA_FC_DATABASE, type FIFAClubData } from '../services/fifaData';
+import { HISTORICAL_ERAS_DATABASE, type HistoricalClub } from '../services/historicalData';
 
 const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge', 'Jose', 'Diego', 'Mateo', 'Lucas', 'Martin', 'Leo', 'Hugo', 'Daniel'];
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
 const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'Alemania', 'Italia', 'Portugal', 'Uruguay', 'Colombia'];
 
-export const espTeams = [
-  'Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Athletic Club',
-  'Real Sociedad', 'Real Betis', 'Villarreal CF', 'Valencia CF',
-  'Sevilla FC', 'Girona FC', 'CA Osasuna', 'Celta de Vigo',
-  'Rayo Vallecano', 'RCD Mallorca', 'Getafe CF', 'Deportivo Alavés',
-  'RCD Espanyol', 'UD Las Palmas', 'CD Leganés', 'Real Valladolid'
+export const espTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'LaLiga').map(c => c.name);
+export const engTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Premier League').map(c => c.name);
+export const itaTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Serie A').map(c => c.name);
+export const gerTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Bundesliga').map(c => c.name);
+export const fraTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Ligue 1').map(c => c.name);
+export const argTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Liga Profesional').map(c => c.name);
+export const worldTeams = [
+  'Real Madrid', 'Manchester City', 'FC Barcelona', 'Liverpool FC', 'Arsenal FC',
+  'Bayern München', 'Paris Saint-Germain', 'Inter', 'Juventus', 'Atlético de Madrid',
+  'Bayer 04 Leverkusen', 'Borussia Dortmund', 'Chelsea FC', 'AC Milan', 'Napoli',
+  'Sporting CP', 'SL Benfica', 'River Plate', 'Boca Juniors', 'Inter Miami CF', 'Al Nassr'
 ];
-export const engTeams = [
-  'Manchester City', 'Arsenal FC', 'Liverpool FC', 'Chelsea FC',
-  'Manchester United', 'Tottenham Hotspur', 'Newcastle United', 'Aston Villa',
-  'Brighton & Hove Albion', 'West Ham United', 'Everton FC', 'Fulham FC',
-  'Wolverhampton Wanderers', 'Brentford FC', 'Crystal Palace', 'AFC Bournemouth',
-  'Nottingham Forest', 'Leicester City', 'Ipswich Town', 'Southampton FC'
-];
-export const itaTeams = ['Juventus', 'Inter', 'AC Milan', 'Napoli', 'AS Roma', 'Lazio', 'Atalanta', 'Fiorentina'];
-export const fraTeams = ['Paris SG', 'Olympique de Marseille', 'Olympique Lyonnais', 'AS Monaco', 'LOSC Lille'];
-export const gerTeams = ['Bayern München', 'Borussia Dortmund', 'Bayer 04 Leverkusen', 'RB Leipzig', 'Eintracht Frankfurt'];
 export const teamNames = [...espTeams, ...engTeams];
+
+export function getLeagueTeamNames(competitionId?: string): string[] {
+  if (competitionId === 'GB1') return engTeams.length > 0 ? engTeams : ['Manchester City', 'Arsenal FC', 'Liverpool FC', 'Chelsea FC'];
+  if (competitionId === 'IT1') return itaTeams.length > 0 ? itaTeams : ['Juventus', 'Inter', 'AC Milan', 'Napoli'];
+  if (competitionId === 'L1') return gerTeams.length > 0 ? gerTeams : ['Bayern München', 'Borussia Dortmund', 'Bayer 04 Leverkusen', 'RB Leipzig'];
+  if (competitionId === 'FR1') return fraTeams.length > 0 ? fraTeams : ['Paris Saint-Germain', 'Olympique de Marseille', 'Olympique Lyonnais', 'AS Monaco'];
+  if (competitionId === 'AR1N') return argTeams.length > 0 ? argTeams : ['River Plate', 'Boca Juniors', 'Racing Club', 'Independiente'];
+  if (competitionId === 'WORLD') return worldTeams;
+  return espTeams.length > 0 ? espTeams : ['Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Athletic Club'];
+}
 
 export function findFifaClub(teamName: string): FIFAClubData | undefined {
   if (!teamName) return undefined;
@@ -51,7 +57,7 @@ export function findFifaClub(teamName: string): FIFAClubData | undefined {
     })) return c;
   }
 
-  // 3. Word match (e.g. "Brighton" in "Brighton & Hove Albion")
+  // 3. Word match (e.g. "Brighton" in "Brighton & Hove Albion", "River" in "River Plate")
   const targetWords = target.split(/\s+/).filter(w => w.length >= 4);
   if (targetWords.length > 0) {
     for (const c of EA_FC_DATABASE) {
@@ -61,6 +67,43 @@ export function findFifaClub(teamName: string): FIFAClubData | undefined {
         const aClean = clean(a);
         return targetWords.some(tw => aClean.includes(tw));
       })) return c;
+    }
+  }
+
+  return undefined;
+}
+
+export function findHistoricalClub(teamName: string, year: number): HistoricalClub | undefined {
+  const clubs = HISTORICAL_ERAS_DATABASE[year];
+  if (!clubs || clubs.length === 0) return undefined;
+
+  const clean = (s: string) => s.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, ' ')
+    .trim();
+
+  const target = clean(teamName);
+
+  // 1. Direct name match
+  for (const c of clubs) {
+    if (clean(c.name) === target) return c;
+  }
+
+  // 2. Contains match with special guard for Barcelona vs Espanyol
+  for (const c of clubs) {
+    const cClean = clean(c.name);
+    if (target.includes('barcelona') && !target.includes('espanyol') && cClean.includes('espanyol')) continue;
+    if (cClean.includes(target) || target.includes(cClean)) return c;
+  }
+
+  // 3. Significant word match
+  const targetWords = target.split(/\s+/).filter(w => w.length >= 4 && !['club', 'futbol', 'real', 'city'].includes(w));
+  if (targetWords.length > 0) {
+    for (const c of clubs) {
+      const cClean = clean(c.name);
+      if (target.includes('barcelona') && !target.includes('espanyol') && cClean.includes('espanyol')) continue;
+      if (targetWords.some(tw => cClean.includes(tw))) return c;
     }
   }
 
@@ -80,7 +123,8 @@ export async function createNewLeague(
   difficulty: 'Normal' | 'Hard' | 'Insane',
   userTeamIndex: number = -1,
   startYear: number = 2026,
-  startPeriod: 'preseason' | 'winter_window' | 'final_stretch' = 'preseason'
+  startPeriod: 'preseason' | 'winter_window' | 'final_stretch' = 'preseason',
+  competitionId: string = 'ES1'
 ): Promise<number> {
   let initialWeek = 1;
   if (startPeriod === 'winter_window') initialWeek = 19;
@@ -99,8 +143,10 @@ export async function createNewLeague(
   });
 
   const createdTeamIds: number[] = [];
+  const targetTeams = getLeagueTeamNames(competitionId);
 
-  for (const tname of teamNames) {
+  for (const tname of targetTeams) {
+    const histMatch = startYear !== 2026 ? findHistoricalClub(tname, startYear) : undefined;
     const fifaMatch = findFifaClub(tname);
     const isEsp = espTeams.includes(tname);
     const nameLow = tname.toLowerCase();
@@ -110,23 +156,31 @@ export async function createNewLeague(
     else if (nameLow.includes('city') || nameLow.includes('manchester city')) initialPrestige = 96;
     else if (nameLow.includes('liverpool') || nameLow.includes('arsenal')) initialPrestige = 90;
     else if (nameLow.includes('atlético') || nameLow.includes('atletico')) initialPrestige = 88;
+    else if (nameLow.includes('bayern')) initialPrestige = 95;
+    else if (nameLow.includes('paris') || nameLow.includes('psg')) initialPrestige = 92;
+    else if (nameLow.includes('inter') || nameLow.includes('juventus')) initialPrestige = 90;
+    else if (nameLow.includes('river') || nameLow.includes('boca')) initialPrestige = 85;
     else {
-      const baseOvr = fifaMatch ? fifaMatch.overall : 78;
+      const baseOvr = histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : 78);
       initialPrestige = Math.min(85, Math.max(50, Math.round((baseOvr - 60) * 2.8)));
     }
 
-    let domesticLeague = 'Premier League';
-    if (espTeams.includes(tname)) domesticLeague = 'LaLiga';
+    let domesticLeague = 'LaLiga';
+    if (fifaMatch && fifaMatch.domesticLeague) {
+      domesticLeague = fifaMatch.domesticLeague;
+    } else if (espTeams.includes(tname)) domesticLeague = 'LaLiga';
+    else if (engTeams.includes(tname)) domesticLeague = 'Premier League';
     else if (itaTeams.includes(tname)) domesticLeague = 'Serie A';
     else if (fraTeams.includes(tname)) domesticLeague = 'Ligue 1';
     else if (gerTeams.includes(tname)) domesticLeague = 'Bundesliga';
+    else if (argTeams.includes(tname)) domesticLeague = 'Liga Profesional';
 
     const pop = randomInt(1000000, 12000000);
     const teamId = await db.teams.add({
       leagueId,
       domesticLeague,
       name: tname,
-      overall: fifaMatch ? fifaMatch.overall : randomInt(76, 85),
+      overall: histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : randomInt(76, 85)),
       prestige: initialPrestige,
       wins: startPeriod === 'preseason' ? 0 : randomInt(4, 14),
       draws: startPeriod === 'preseason' ? 0 : randomInt(2, 6),
@@ -142,10 +196,41 @@ export async function createNewLeague(
       kit: fifaMatch ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern } : { primaryColor: isEsp ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' }
     }) as number;
 
+
     createdTeamIds.push(teamId);
 
     const players = [];
-    if (fifaMatch && fifaMatch.squad.length > 0) {
+    if (histMatch && histMatch.squad && histMatch.squad.length >= 11) {
+      // Use verified Historical Era squad from Transfermarkt
+      for (const hp of histMatch.squad) {
+        const isEliteStar = hp.overall >= 89 || hp.marketValue >= 80000000;
+        const clause = isEliteStar ? 1000000000 : Math.max(15000000, Math.round(hp.marketValue * randomInt(3, 5)));
+
+        players.push({
+          leagueId,
+          teamId,
+          name: hp.name,
+          age: hp.age,
+          overall: hp.overall,
+          potential: hp.potential,
+          position: hp.position,
+          specificPosition: hp.specificPosition || (hp.position === 'POR' ? 'POR' : hp.position === 'DEF' ? 'DFC' : hp.position === 'MED' ? 'MC' : 'DC'),
+          contract: Math.max(500000, Math.floor(hp.marketValue * 0.07)),
+          contractYears: randomInt(2, 5),
+          contractEndSeason: startYear + randomInt(2, 5),
+          releaseClause: clause,
+          morale: randomInt(80, 95),
+          unhappy: false,
+          stats: getInitialPlayerStats(),
+          attributes: hp.attributes,
+          bio: {
+            height: randomInt(172, 192),
+            weight: randomInt(68, 88),
+            country: hp.country
+          }
+        });
+      }
+    } else if (fifaMatch && fifaMatch.squad.length > 0) {
       // Use EA FC Database
       for (const fp of fifaMatch.squad) {
         const isEliteStar = fp.overall >= 89 || fp.marketValue >= 100000000;
@@ -344,6 +429,8 @@ export async function createRealLeagueFromTransfermarkt(
       const dbPlayers: any[] = [];
       if (fifaMatch && fifaMatch.squad.length > 0) {
         for (const fp of fifaMatch.squad) {
+          const isEliteStar = fp.overall >= 89 || fp.marketValue >= 100000000;
+          const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 5));
           dbPlayers.push({
             leagueId,
             teamId,
@@ -356,6 +443,9 @@ export async function createRealLeagueFromTransfermarkt(
             contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
             contractYears: randomInt(2, 5),
             contractEndSeason: startYear + randomInt(2, 5),
+            releaseClause: clause,
+            morale: randomInt(80, 95),
+            unhappy: false,
             stats: getInitialPlayerStats(),
             attributes: fp.attributes,
             bio: {
@@ -365,6 +455,7 @@ export async function createRealLeagueFromTransfermarkt(
             }
           });
         }
+
       } else {
         const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
         const specificPositions: ('POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = [

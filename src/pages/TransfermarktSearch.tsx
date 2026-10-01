@@ -11,6 +11,7 @@ import {
 } from '../services/transfermarkt';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Search, Globe, UserPlus, DollarSign, Activity, AlertCircle, Settings, Award, Tag, ArrowLeftRight } from 'lucide-react';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './TransfermarktSearch.css';
 
 export function TransfermarktSearch() {
@@ -250,9 +251,12 @@ export function TransfermarktSearch() {
                 <tr key={p.id}>
                   <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
                   <td style={{ fontWeight: 'bold' }}>
-                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
-                      {p.name}
-                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <PlayerAvatar player={p} size={26} />
+                      <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                        {p.name}
+                      </Link>
+                    </div>
                   </td>
                   <td>{p.teamName}</td>
                   <td>{p.age}</td>
@@ -313,9 +317,12 @@ export function TransfermarktSearch() {
             return (
               <div key={p.id} className="tm-player-card glass-panel" onClick={() => handleSelectPlayer(p)}>
                 <div className="tm-card-header">
-                  <div>
-                    <h3>{p.name}</h3>
-                    <p className="tm-card-subtitle">{p.club?.name || 'Sin club'} • {p.position}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <PlayerAvatar player={{ id: p.id, name: p.name }} size={38} />
+                    <div>
+                      <h3>{p.name}</h3>
+                      <p className="tm-card-subtitle">{p.club?.name || 'Sin club'} • {p.position}</p>
+                    </div>
                   </div>
                   <span className="tm-ovr-badge">{ovr}</span>
                 </div>

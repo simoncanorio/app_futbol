@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, formatMoney, isTransferWindowOpen } from '../db/db';
 import { DollarSign, ArrowLeftRight, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function Trades() {
   const { leagueId } = useParams();
@@ -368,9 +369,12 @@ export function Trades() {
                     </td>
                     <td style={{ fontWeight: 'bold', color: '#38bdf8' }}>{p.position}</td>
                     <td style={{ fontWeight: 'bold' }}>
-                      <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
-                        {p.name}
-                      </Link>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <PlayerAvatar player={p} size={26} />
+                        <Link to={`/l/${leagueId}/player/${p.id}`} style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                          {p.name}
+                        </Link>
+                      </div>
                     </td>
                     <td>{p.age}</td>
                     <td><strong>{p.overall}</strong></td>

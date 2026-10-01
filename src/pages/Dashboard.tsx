@@ -5,6 +5,7 @@ import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, Zap, Ar
 import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
 import { advanceWeek } from '../engine/gameLoop';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './Dashboard.css';
 
 export function Dashboard() {
@@ -115,6 +116,10 @@ export function Dashboard() {
     const players = await db.players.where('leagueId').equals(lid).toArray();
     const matches = await db.matches.where('leagueId').equals(lid).toArray();
     const history = await db.history.where('leagueId').equals(lid).toArray();
+    const transactions = await db.transactions.where('leagueId').equals(lid).toArray();
+    const notes = await db.notes.where('leagueId').equals(lid).toArray();
+    const scoutMissions = await db.scoutMissions.where('leagueId').equals(lid).toArray();
+    const gmHistory = await db.gmHistory.where('leagueId').equals(lid).toArray();
 
     const saveData = {
       version: 1,
@@ -123,7 +128,11 @@ export function Dashboard() {
       teams,
       players,
       matches,
-      history
+      history,
+      transactions,
+      notes,
+      scoutMissions,
+      gmHistory
     };
 
     const jsonStr = JSON.stringify(saveData, null, 2);
@@ -150,7 +159,12 @@ export function Dashboard() {
         await db.players.bulkPut(saveData.players);
         if (saveData.matches) await db.matches.bulkPut(saveData.matches);
         if (saveData.history) await db.history.bulkPut(saveData.history);
+        if (saveData.transactions) await db.transactions.bulkPut(saveData.transactions);
+        if (saveData.notes) await db.notes.bulkPut(saveData.notes);
+        if (saveData.scoutMissions) await db.scoutMissions.bulkPut(saveData.scoutMissions);
+        if (saveData.gmHistory) await db.gmHistory.bulkPut(saveData.gmHistory);
 
+        alert('¡Partida importada con éxito!');
         window.location.reload();
       } else {
         alert('Archivo de guardado no válido.');
@@ -160,6 +174,7 @@ export function Dashboard() {
       alert('Error al importar la partida guardada.');
     }
   };
+
 
   return (
     <div className="dashboard-wrapper">
@@ -396,7 +411,7 @@ export function Dashboard() {
               </div>
               {topScorers[0] ? (
                 <div className="performer-body">
-                  <span className="p-pos">{topScorers[0].position}</span>
+                  <PlayerAvatar player={topScorers[0]} size={38} />
                   <div className="p-details">
                     <Link to={`/l/${leagueId}/player/${topScorers[0].id}`} className="p-name">{topScorers[0].name}</Link>
                     <span className="p-stat-val">{topScorers[0].stats?.goals || 0} Goles</span>
@@ -415,7 +430,7 @@ export function Dashboard() {
               </div>
               {topAssists[0] ? (
                 <div className="performer-body">
-                  <span className="p-pos">{topAssists[0].position}</span>
+                  <PlayerAvatar player={topAssists[0]} size={38} />
                   <div className="p-details">
                     <Link to={`/l/${leagueId}/player/${topAssists[0].id}`} className="p-name">{topAssists[0].name}</Link>
                     <span className="p-stat-val">{topAssists[0].stats?.assists || 0} Asistencias</span>

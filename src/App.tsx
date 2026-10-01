@@ -44,23 +44,34 @@ import { SeasonSummary } from './pages/SeasonSummary';
 import { TransfermarktSearch } from './pages/TransfermarktSearch';
 import { ScoutingNetwork } from './pages/ScoutingNetwork';
 import { KitCreator } from './pages/KitCreator';
+import { DatabaseEditor } from './pages/DatabaseEditor';
+import { db, type League } from './db/db';
 import './App.css';
 
 function LeagueLayout({ children }: { children: React.ReactNode }) {
   const { leagueId } = useParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [season, setSeason] = useState<number>(2026);
+
+  React.useEffect(() => {
+    if (leagueId) {
+      db.leagues.get(Number(leagueId)).then((l: League | undefined) => {
+        if (l?.season) setSeason(l.season);
+      });
+    }
+  }, [leagueId]);
 
   return (
     <>
       <TopNavbar 
         leagueId={Number(leagueId)} 
-        season={2026} 
+        season={season} 
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
       />
       <div className="app-layout">
         <Sidebar leagueId={Number(leagueId)} isOpen={isSidebarOpen} />
         <div className="main-wrapper">
-          <Ticker leagueId={Number(leagueId)} season={2026} />
+          <Ticker leagueId={Number(leagueId)} season={season} />
           <main className="main-content">
             {children}
           </main>
@@ -114,6 +125,7 @@ function App() {
         <Route path="/l/:leagueId/hall_of_fame" element={<LeagueLayout><HallOfFame /></LeagueLayout>} />
         <Route path="/l/:leagueId/draft" element={<LeagueLayout><Draft /></LeagueLayout>} />
         <Route path="/l/:leagueId/youth_academy" element={<LeagueLayout><YouthAcademy /></LeagueLayout>} />
+        <Route path="/l/:leagueId/kit_creator" element={<LeagueLayout><KitCreator /></LeagueLayout>} />
         
         <Route path="/l/:leagueId/game_log" element={<LeagueLayout><GameLog /></LeagueLayout>} />
         <Route path="/l/:leagueId/leaders" element={<LeagueLayout><LeagueLeaders /></LeagueLayout>} />
@@ -131,9 +143,15 @@ function App() {
         <Route path="/l/:leagueId/social_media" element={<LeagueLayout><SocialMedia /></LeagueLayout>} />
         <Route path="/l/:leagueId/press" element={<LeagueLayout><Press /></LeagueLayout>} />
         <Route path="/l/:leagueId/relations" element={<LeagueLayout><Relations /></LeagueLayout>} />
+        <Route path="/l/:leagueId/database_editor" element={<LeagueLayout><DatabaseEditorRoute /></LeagueLayout>} />
       </Routes>
     </BrowserRouter>
   );
+}
+
+function DatabaseEditorRoute() {
+  const { leagueId } = useParams();
+  return <DatabaseEditor currentLeagueId={Number(leagueId)} />;
 }
 
 export default App;

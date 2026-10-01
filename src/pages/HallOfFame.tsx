@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player } from '../db/db';
 import { Trophy, Star, Search, Award, Shield, Flame } from 'lucide-react';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 interface Legend {
   id: string | number;
@@ -462,14 +463,18 @@ export function HallOfFame() {
                 </div>
               </div>
 
-              {/* Player Name */}
-              <h3 style={{ margin: '0 0 0.4rem 0', color: '#f8fafc', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>{l.name}</span>
-                {l.isCustomRetired && <span style={{ fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.2)', padding: '2px 6px', borderRadius: '4px' }}>Cantera/Liga</span>}
-              </h3>
-
-              <div style={{ fontSize: '0.82rem', color: '#38bdf8', marginBottom: '0.75rem', fontWeight: 500 }}>
-                🏟️ {l.clubs}
+              {/* Player Avatar and Name */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0.4rem 0 0.6rem 0' }}>
+                <PlayerAvatar player={{ id: l.id, name: l.name }} size={46} />
+                <div>
+                  <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>{l.name}</span>
+                    {l.isCustomRetired && <span style={{ fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.2)', padding: '2px 6px', borderRadius: '4px' }}>Cantera/Liga</span>}
+                  </h3>
+                  <div style={{ fontSize: '0.82rem', color: '#38bdf8', fontWeight: 500 }}>
+                    🏟️ {l.clubs}
+                  </div>
+                </div>
               </div>
 
               {/* Trophies */}

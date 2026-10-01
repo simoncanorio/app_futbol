@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
 import { Tag, RefreshCw, AlertOctagon, CheckCircle2, XCircle, FileText } from 'lucide-react';
 import { CustomModal } from '../components/common/CustomModal';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function Roster() {
   const { leagueId, teamId } = useParams();
@@ -183,11 +184,14 @@ export function Roster() {
                 </td>
                 <td style={{color: getPosColor(p.position), fontWeight: 'bold'}}>[{getSpecificPosition(p)}]</td>
                 <td>
-                  <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none', fontWeight: 'bold'}}>
-                    {p.name}
-                  </Link>
-                  {p.isInjured && <span title={`Lesionado: ${p.injuryType || 'Desconocido'} (${p.injuryWeeks} sem)`} style={{marginLeft:'5px', fontSize: '1.1rem'}}>🏥</span>}
-                  {p.cards?.suspended && <span title="Suspendido (Roja)" style={{marginLeft:'5px', fontSize: '1.1rem'}}>🟥</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <PlayerAvatar player={p} size={26} />
+                    <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: '#38bdf8', textDecoration: 'none', fontWeight: 'bold'}}>
+                      {p.name}
+                    </Link>
+                    {p.isInjured && <span title={`Lesionado: ${p.injuryType || 'Desconocido'} (${p.injuryWeeks} sem)`} style={{marginLeft:'5px', fontSize: '1.1rem'}}>🏥</span>}
+                    {p.cards?.suspended && <span title="Suspendido (Roja)" style={{marginLeft:'5px', fontSize: '1.1rem'}}>🟥</span>}
+                  </div>
                 </td>
                 <td>{p.age}</td>
                 <td><strong>{p.overall}</strong></td>

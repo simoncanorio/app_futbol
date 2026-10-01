@@ -4,6 +4,7 @@ import { db, type Player, type Team } from '../db/db';
 import { autoSelectLineupForTeam } from '../utils/lineupUtils';
 import { Shield, Sliders, Award, CheckCircle, Zap, AlertTriangle, Info, Sparkles, Heart } from 'lucide-react';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './Tactics.css';
 
 interface PitchSlot {
@@ -476,7 +477,12 @@ export function Tactics() {
                         className="draggable-row"
                       >
                         <td className="col-pos">{p.position}</td>
-                        <td style={{ color: '#ffffff', fontWeight: 'bold' }}>{p.name}</td>
+                        <td style={{ color: '#ffffff', fontWeight: 'bold' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <PlayerAvatar player={p} size={24} />
+                            <span>{p.name}</span>
+                          </div>
+                        </td>
                         <td className="col-ovr">{p.overall}</td>
                         <td>
                           <span style={{ color: fitness < 60 ? '#ef4444' : fitness < 80 ? '#eab308' : '#10b981', fontWeight: 'bold', fontSize: '0.8rem' }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createNewLeague, createRealLeagueFromTransfermarkt, espTeams, engTeams } from '../db/generators';
+import { createNewLeague, createRealLeagueFromTransfermarkt, getLeagueTeamNames } from '../db/generators';
 import { tmService } from '../services/transfermarkt';
 import { OFFLINE_CLUBS } from '../services/transfermarktData';
 import { Globe, Cpu, Calendar, Sun, Snowflake, Flame, Star, Shield, CheckCircle } from 'lucide-react';
@@ -26,12 +26,13 @@ export function NewLeague() {
   const [statusMsg, setStatusMsg] = useState('');
 
   const competitionsList = [
-    { id: 'ES1', name: 'LaLiga (España)' },
+    { id: 'ES1', name: 'LaLiga EA Sports (España)' },
     { id: 'GB1', name: 'Premier League (Inglaterra)' },
     { id: 'IT1', name: 'Serie A (Italia)' },
     { id: 'L1', name: 'Bundesliga (Alemania)' },
     { id: 'FR1', name: 'Ligue 1 (Francia)' },
-    { id: 'AR1N', name: 'Liga Profesional (Argentina)' }
+    { id: 'AR1N', name: 'Liga Profesional (Argentina)' },
+    { id: 'WORLD', name: 'Superliga Mundial (Clubes de Élite)' }
   ];
 
   const erasPresets = [
@@ -54,11 +55,21 @@ export function NewLeague() {
         } catch {
           // Fallback
         }
-        const filtered = OFFLINE_CLUBS.filter(c => competitionId === 'ES1' ? c.country === 'España' : c.country === 'Inglaterra');
+        let country = 'España';
+        if (competitionId === 'GB1') country = 'Inglaterra';
+        else if (competitionId === 'IT1') country = 'Italia';
+        else if (competitionId === 'L1') country = 'Alemania';
+        else if (competitionId === 'FR1') country = 'Francia';
+        else if (competitionId === 'AR1N') country = 'Argentina';
+
+        const filtered = competitionId === 'WORLD' 
+          ? OFFLINE_CLUBS 
+          : OFFLINE_CLUBS.filter(c => c.country === country);
         setAvailableClubs(filtered.map(c => ({ id: c.id, name: c.name })));
         setSelectedTeamIndex(0);
       } else {
-        const procedural = [...espTeams, ...engTeams].map((name, i) => ({ id: String(i), name }));
+        const proceduralTeams = getLeagueTeamNames(competitionId);
+        const procedural = proceduralTeams.map((name, i) => ({ id: String(i), name }));
         setAvailableClubs(procedural);
         setSelectedTeamIndex(0);
       }
@@ -70,7 +81,7 @@ export function NewLeague() {
     setIsGenerating(true);
     try {
       if (mode === 'procedural') {
-        const id = await createNewLeague(leagueName, difficulty, selectedTeamIndex, startYear, startPeriod);
+        const id = await createNewLeague(leagueName, difficulty, selectedTeamIndex, startYear, startPeriod, competitionId);
         navigate(`/l/${id}`);
       } else {
         const selectedComp = competitionsList.find(c => c.id === competitionId);
@@ -108,7 +119,7 @@ export function NewLeague() {
           onClick={() => { setMode('transfermarkt'); setLeagueName('LaLiga EA Sports'); }}
           style={{ padding: '0.8rem 1.5rem', fontSize: '1rem' }}
         >
-          <Globe size={18} /> Real Sync (Transfermarkt API)
+          <Globe size={18} /> Real Sync (Transfermarkt & EA FC)
         </button>
         <button
           className={`tm-tab ${mode === 'procedural' ? 'active' : ''}`}
@@ -131,24 +142,23 @@ export function NewLeague() {
             />
           </div>
 
-          {mode === 'transfermarkt' && (
-            <div className="form-group">
-              <label>Competición Real</label>
-              <select
-                className="bb-select"
-                value={competitionId}
-                onChange={e => {
-                  setCompetitionId(e.target.value);
-                  const found = competitionsList.find(c => c.id === e.target.value);
-                  if (found) setLeagueName(found.name);
-                }}
-              >
-                {competitionsList.map(comp => (
-                  <option key={comp.id} value={comp.id}>{comp.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="form-group">
+            <label>Competición / Torneo</label>
+            <select
+              className="bb-select"
+              value={competitionId}
+              onChange={e => {
+                setCompetitionId(e.target.value);
+                const found = competitionsList.find(c => c.id === e.target.value);
+                if (found) setLeagueName(found.name.split(' (')[0]);
+              }}
+            >
+              {competitionsList.map(comp => (
+                <option key={comp.id} value={comp.id}>{comp.name}</option>
+              ))}
+            </select>
+          </div>
+
 
           {/* Team Selection Picker Grid (Task 2) */}
           <div className="form-group">
