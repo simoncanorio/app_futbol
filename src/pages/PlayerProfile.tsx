@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
+import { db, type Player, type Team, type League, getSpecificPosition, formatMoney } from '../db/db';
+import { calculatePlayerMarketValue } from '../engine/valuationEngine';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { Target, Share2, Shield, Flame, Activity, Award, CheckCircle, RefreshCw, FileText, Search } from 'lucide-react';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
@@ -70,8 +71,11 @@ export function PlayerProfile() {
         <div style={{ flex: 1, minWidth: '300px' }}>
           <h1 style={{ margin: '0 0 0.5rem 0', color: '#fff', fontSize: '2.2rem' }}>{player.name}</h1>
           <div style={{ color: '#aaa', fontSize: '14px', lineHeight: '1.7' }}>
-            <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-              <span style={{ color: '#eab308', fontWeight: 'bold' }}>Posición: [{getSpecificPosition(player)}] ({player.position})</span>
+            <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ color: '#eab308', fontWeight: 'bold' }}>
+                Posición: [{getSpecificPosition(player)}] ({player.position})
+                {player.secondaryPositions && player.secondaryPositions.length > 0 ? ` • Alt: ${player.secondaryPositions.join(', ')}` : ''}
+              </span>
               <span>•</span>
               {team ? (
                 <Link to={`/l/${leagueId}/team/${team.id}`} style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold' }}>{team.name}</Link>
@@ -80,8 +84,33 @@ export function PlayerProfile() {
               )}
               <span>•</span>
               <span>{player.age} Años ({player.bio?.height || 180} cm, {player.bio?.weight || 75} kg)</span>
+              <span>•</span>
+              <span>Pie: <strong>{player.bio?.preferredFoot === 'Left' ? 'Izquierdo' : 'Derecho'}</strong> ({player.bio?.weakFoot || 3}★ PM / {player.bio?.skillMoves || 3}★ Filigranas)</span>
             </div>
-            <div>Salario: <strong>${(player.contract / 1000000).toFixed(2)}M/año</strong> | Contrato: <strong>{player.contractYears || 2} Años restantes</strong></div>
+            <div>
+              Valor de Mercado: <strong style={{ color: '#10b981' }}>{formatMoney(calculatePlayerMarketValue(player))}</strong> | Salario: <strong>${(player.contract / 1000000).toFixed(2)}M/año</strong> | Contrato: <strong>{player.contractYears || 2} Años</strong>
+              {s.averageRating ? <span style={{ marginLeft: '10px', color: '#38bdf8' }}>• Nota Media: <strong>{s.averageRating.toFixed(2)}</strong> ({s.manOfTheMatch || 0} MVP)</span> : null}
+            </div>
+            {player.playStyles && player.playStyles.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                {player.playStyles.map((ps, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      fontSize: '0.72rem',
+                      padding: '1px 7px',
+                      borderRadius: '4px',
+                      background: ps.includes('+') ? 'rgba(245, 158, 11, 0.2)' : 'rgba(56, 189, 248, 0.12)',
+                      border: `1px solid ${ps.includes('+') ? '#f59e0b' : 'rgba(56, 189, 248, 0.35)'}`,
+                      color: ps.includes('+') ? '#fbbf24' : '#7dd3fc',
+                      fontWeight: 600
+                    }}
+                  >
+                    ⚡ {ps}
+                  </span>
+                ))}
+              </div>
+            )}
             {player.isTransferListed && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🏷️ Declarado Transferible</span>}
             {player.isOnLoan && <span style={{ color: '#fbbf24', fontWeight: 'bold', marginLeft: '0.5rem' }}>🔄 Cedido en préstamo</span>}
 

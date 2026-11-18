@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League, formatMoney, isTransferWindowOpen } from '../db/db';
-import { DollarSign, ArrowLeftRight, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
+import { db, type Player, type Team, type League, type TransferOffer, formatMoney, isTransferWindowOpen } from '../db/db';
+import { calculateTransferAskingPrice, calculateExpectedAnnualWage } from '../engine/valuationEngine';
+import { autoSelectLineupForTeam } from '../utils/lineupUtils';
+import { ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function Trades() {
@@ -11,6 +13,7 @@ export function Trades() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | ''>('');
   const [roster, setRoster] = useState<Player[]>([]);
+  const [incomingOffers, setIncomingOffers] = useState<TransferOffer[]>([]);
   const [wageBudget, setWageBudget] = useState(0);
   const [currentWageBill, setCurrentWageBill] = useState(0);
   const [allowOffWindowTransfers, setAllowOffWindowTransfers] = useState(false);
@@ -60,12 +63,110 @@ export function Trades() {
       if (l.userTeamId) {
         await loadTeamFinancials(lid, l.userTeamId);
         setTeams(allTeams.filter(t => t.id !== l.userTeamId));
+        const offers = await db.transferOffers
+          .where('toUserTeamId')
+          .equals(l.userTeamId)
+          .filter(o => o.status === 'pending')
+          .toArray();
+        setIncomingOffers(offers);
       } else {
         setTeams(allTeams);
       }
     }
     load();
   }, [leagueId]);
+
+  const handleAcceptIncomingOffer = async (offer: TransferOffer, customAmount?: number) => {
+    if (!userTeam || !league) return;
+    const p = await db.players.get(offer.playerId);
+    const buyer = await db.teams.get(offer.fromAiTeamId);
+    if (!p || !buyer) return;
+
+    const finalFee = customAmount ?? offer.amount;
+    if (offer.offerType === 'loan') {
+      p.teamId = buyer.id!;
+      p.isOnLoan = true;
+      p.loanedFromTeamId = userTeam.id!;
+      p.lineupStatus = 'reserve';
+    } else {
+      p.teamId = buyer.id!;
+      p.contract = offer.wageOffered;
+      p.contractYears = 4;
+      p.contractEndSeason = league.season + 4;
+      p.isTransferListed = false;
+      p.lineupStatus = 'reserve';
+    }
+
+    userTeam.budget += finalFee;
+    buyer.budget = Math.max(0, buyer.budget - finalFee);
+
+    offer.status = 'accepted';
+    offer.amount = finalFee;
+
+    await Promise.all([
+      db.players.put(p),
+      db.teams.bulkPut([userTeam, buyer]),
+      db.transferOffers.put(offer),
+      db.transactions.add({
+        leagueId: league.id!,
+        type: offer.offerType === 'loan' ? 'loan' : 'transfer',
+        playerId: p.id!,
+        fromTeamId: userTeam.id!,
+        toTeamId: buyer.id!,
+        amount: finalFee,
+        season: league.season,
+        week: league.currentWeek,
+        date: Date.now()
+      })
+    ]);
+
+    await autoSelectLineupForTeam(userTeam.id!);
+    await autoSelectLineupForTeam(buyer.id!);
+    await loadTeamFinancials(league.id!, userTeam.id!);
+    setIncomingOffers(prev => prev.filter(o => o.id !== offer.id));
+  };
+
+  const handleCounterIncomingOffer = async (offer: TransferOffer) => {
+    const buyer = await db.teams.get(offer.fromAiTeamId);
+    const boosted = Math.round(offer.amount * 1.18);
+    if (buyer && buyer.budget >= boosted && Math.random() < 0.68) {
+      await handleAcceptIncomingOffer(offer, boosted);
+    } else {
+      offer.status = 'rejected';
+      await db.transferOffers.put(offer);
+      setIncomingOffers(prev => prev.filter(o => o.id !== offer.id));
+      alert(`${offer.fromAiTeamName} ha rechazado tu contraoferta de ${formatMoney(boosted)} y se ha retirado de la puja.`);
+    }
+  };
+
+  const handleRejectIncomingOffer = async (offer: TransferOffer) => {
+    offer.status = 'rejected';
+    await db.transferOffers.put(offer);
+    setIncomingOffers(prev => prev.filter(o => o.id !== offer.id));
+  };
+
+  const handleEmergencyRenew = async (offer: TransferOffer) => {
+    if (!userTeam || !league) return;
+    const p = await db.players.get(offer.playerId);
+    if (!p) return;
+
+    const newWage = Math.round(Math.max(p.contract, offer.wageOffered) * 1.2);
+    const newClause = Math.round(offer.amount * 2.2);
+    p.contract = newWage;
+    p.contractYears = 5;
+    p.contractEndSeason = league.season + 5;
+    p.releaseClause = newClause;
+    p.morale = 95;
+    p.unhappy = false;
+
+    offer.status = 'rejected';
+    await Promise.all([
+      db.players.put(p),
+      db.transferOffers.put(offer)
+    ]);
+    await loadTeamFinancials(league.id!, userTeam.id!);
+    setIncomingOffers(prev => prev.filter(o => o.id !== offer.id));
+  };
 
   useEffect(() => {
     async function loadRoster() {
@@ -80,15 +181,19 @@ export function Trades() {
   }, [selectedTeamId]);
 
   const handleOpenNegotiation = (p: Player) => {
+    const sellerTeam = teams.find(t => t.id === p.teamId);
+    const val = calculateTransferAskingPrice(p, sellerTeam, userTeam || undefined, league?.difficulty || 'Normal');
+    const expWage = calculateExpectedAnnualWage(p, userTeam?.prestige || 75);
+
     setNegotiatingPlayer(p);
     setStep('club_fee');
     setTradeType('transfer');
-    setOfferAmount(Math.max(1000000, p.contract * 10));
+    setOfferAmount(val.askingPrice);
     setSellOnPercent(10);
-    setBuyOptionFee(Math.max(2000000, Math.floor(p.contract * 12)));
-    setPlayerWage(p.contract || 2000000);
+    setBuyOptionFee(Math.round(val.marketValue * 1.1));
+    setPlayerWage(Math.max(p.contract || expWage, expWage));
     setContractYears(3);
-    setSigningBonus(Math.round((p.contract || 2000000) * 0.15));
+    setSigningBonus(Math.round(expWage * 0.2));
     setAiStatus({ status: 'idle', msg: '' });
   };
 
@@ -117,14 +222,9 @@ export function Trades() {
       return;
     }
 
-    const baseValue = negotiatingPlayer.contract * 8;
-    
-    let diffMultiplier = 1.1;
-    if (league.difficulty === 'Hard') diffMultiplier = 1.35;
-    if (league.difficulty === 'Insane') diffMultiplier = 1.6;
-
-    let targetRequired = baseValue * diffMultiplier;
-    targetRequired -= (sellOnPercent * 0.01) * baseValue * 0.5;
+    const valuation = calculateTransferAskingPrice(negotiatingPlayer, sellerTeam, userTeam, league.difficulty);
+    let targetRequired = valuation.askingPrice;
+    targetRequired -= (sellOnPercent * 0.01) * valuation.marketValue * 0.45;
 
     if (tradeType === 'transfer') {
       if (offerAmount > userTeam.budget) {
@@ -134,7 +234,7 @@ export function Trades() {
 
       if (offerAmount >= targetRequired) {
         setStep('player_contract');
-        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club! Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones salariales.` });
+        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club${valuation.rivalryName ? ` pese a la tensión de ${valuation.rivalryName}` : ''}! Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones salariales.` });
       } else if (offerAmount >= targetRequired * 0.8) {
         const counter = Math.round(targetRequired);
         setAiStatus({
@@ -146,11 +246,11 @@ export function Trades() {
         setAiStatus({ status: 'rejected', msg: `Oferta por el traspaso muy baja. Exigen al menos ${formatMoney(targetRequired)}.` });
       }
     } else {
-      if (buyOptionFee >= targetRequired * 0.9) {
+      if (buyOptionFee >= targetRequired * 0.85) {
         setStep('player_contract');
         setAiStatus({ status: 'accepted', msg: `¡Cesión aceptada por el club rival! Procede a negociar el contrato con ${negotiatingPlayer.name}.` });
       } else {
-        setAiStatus({ status: 'rejected', msg: 'Opción de compra rechazada. Exigen un valor de opción más alto.' });
+        setAiStatus({ status: 'rejected', msg: `Opción de compra rechazada. Exigen al menos ${formatMoney(Math.round(targetRequired * 0.85))}.` });
       }
     }
   };
@@ -158,14 +258,16 @@ export function Trades() {
   const handleFinalizePlayerContract = async () => {
     if (!negotiatingPlayer || !userTeam || !league) return;
 
-    const askingWage = negotiatingPlayer.personality === 'Avaricioso' ? negotiatingPlayer.contract * 1.3 : negotiatingPlayer.contract;
+    const expWage = calculateExpectedAnnualWage(negotiatingPlayer, userTeam.prestige || 75);
+    const askingWage = Math.max(negotiatingPlayer.contract || expWage, expWage);
     if (playerWage < askingWage * 0.9) {
       setAiStatus({ status: 'rejected', msg: `${negotiatingPlayer.name} (Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}) considera insuficiente el salario. Exige al menos ${formatMoney(askingWage)}/año.` });
       return;
     }
 
-    if (offerAmount + signingBonus > userTeam.budget) {
-      setAiStatus({ status: 'rejected', msg: `Presupuesto de traspaso insuficiente: Necesitas ${formatMoney(offerAmount + signingBonus)} (Traspaso + Prima) pero tienes ${formatMoney(userTeam.budget)} en caja.` });
+    const upfrontFee = tradeType === 'loan' ? 0 : offerAmount;
+    if (upfrontFee + signingBonus > userTeam.budget) {
+      setAiStatus({ status: 'rejected', msg: `Presupuesto de traspaso insuficiente: Necesitas ${formatMoney(upfrontFee + signingBonus)} (Traspaso + Prima) pero tienes ${formatMoney(userTeam.budget)} en caja.` });
       return;
     }
 
@@ -192,12 +294,20 @@ export function Trades() {
 
     await db.players.put(negotiatingPlayer);
 
-    // Update budget and local states
-    const newBudget = userTeam.budget - (offerAmount + signingBonus);
+    // Update buyer & seller budgets
+    const newBudget = userTeam.budget - (upfrontFee + signingBonus);
     userTeam.budget = newBudget;
     await db.teams.put(userTeam);
     setUserTeam({ ...userTeam, budget: newBudget });
     setCurrentWageBill(prev => prev + playerWage);
+
+    if (prevTeamId && upfrontFee > 0) {
+      const sellerClub = await db.teams.get(prevTeamId);
+      if (sellerClub) {
+        sellerClub.budget += upfrontFee;
+        await db.teams.put(sellerClub);
+      }
+    }
 
     // Record Transaction
     await db.transactions.add({
@@ -309,6 +419,91 @@ export function Trades() {
         </div>
       )}
 
+      {/* Incoming AI Offers Inbox */}
+      {incomingOffers.length > 0 && (
+        <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.25rem', borderLeft: '4px solid #f59e0b' }}>
+          <h3 style={{ margin: '0 0 0.75rem 0', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📥 Ofertas Recibidas de Otros Clubes por Tus Jugadores ({incomingOffers.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {incomingOffers.map(off => (
+              <div
+                key={off.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '1rem',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '8px',
+                  background: off.offerType === 'release_clause' ? 'rgba(220, 38, 38, 0.15)' : 'rgba(15, 23, 42, 0.65)',
+                  border: `1px solid ${off.offerType === 'release_clause' ? '#ef4444' : 'rgba(255,255,255,0.08)'}`
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'bold', color: '#f8fafc', fontSize: '0.95rem' }}>
+                    {off.offerType === 'release_clause' ? '🚨 CLÁUSULA DEPOSITADA: ' : off.offerType === 'loan' ? '🔄 Oferta de Cesión: ' : '💰 Oferta de Compra: '}
+                    <span style={{ color: '#38bdf8' }}>{off.playerName}</span> ({off.playerPosition}, OVR {off.playerOverall})
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '2px' }}>
+                    Club Interesado: <strong style={{ color: '#e2e8f0' }}>{off.fromAiTeamName}</strong> • Monto Ofrecido:{' '}
+                    <strong style={{ color: '#10b981' }}>{formatMoney(off.amount)}</strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {off.offerType === 'release_clause' ? (
+                    <>
+                      <button
+                        className="tm-btn-primary"
+                        onClick={() => handleEmergencyRenew(off)}
+                        style={{ background: '#0284c7', fontSize: '0.78rem', padding: '6px 12px' }}
+                      >
+                        🛡️ Renovación de Emergencia (+20% Sueldo y Blindar)
+                      </button>
+                      <button
+                        className="tm-btn-primary"
+                        onClick={() => handleAcceptIncomingOffer(off)}
+                        style={{ background: '#10b981', fontSize: '0.78rem', padding: '6px 12px' }}
+                      >
+                        💵 Cobrar Cláusula ({formatMoney(off.amount)})
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="tm-btn-primary"
+                        onClick={() => handleAcceptIncomingOffer(off)}
+                        style={{ background: '#10b981', fontSize: '0.78rem', padding: '6px 12px' }}
+                      >
+                        ✔ Aceptar ({formatMoney(off.amount)})
+                      </button>
+                      {off.offerType === 'transfer' && (
+                        <button
+                          className="tm-btn-primary"
+                          onClick={() => handleCounterIncomingOffer(off)}
+                          style={{ background: '#f59e0b', color: '#000', fontWeight: 'bold', fontSize: '0.78rem', padding: '6px 12px' }}
+                        >
+                          📈 Exigir {formatMoney(Math.round(off.amount * 1.18))} (+18%)
+                        </button>
+                      )}
+                      <button
+                        className="settings-btn"
+                        onClick={() => handleRejectIncomingOffer(off)}
+                        style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                      >
+                        ✕ Rechazar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass-panel" style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <label style={{ fontWeight: 'bold' }}>Seleccionar Club Rival: </label>
@@ -405,6 +600,28 @@ export function Trades() {
                         >
                           🔥 Cláusula
                         </button>
+                        {(p.contractYears ?? 2) <= 1 && ((league?.currentWeek || 1) >= 19 || allowOffWindowTransfers) && (
+                          <button
+                            className="tm-btn-primary"
+                            onClick={() => {
+                              setNegotiatingPlayer(p);
+                              setTradeType('transfer');
+                              setOfferAmount(0);
+                              setPlayerWage(Math.round((p.contract || 1500000) * 1.1));
+                              setContractYears(4);
+                              setSigningBonus(Math.round((p.contract || 1500000) * 0.35));
+                              setStep('player_contract');
+                              setAiStatus({
+                                status: 'accepted',
+                                msg: `✍️ ¡Ley Bosman Aplicada! A ${p.name} le resta ≤1 año de contrato, por lo que puedes negociar libremente sin pagar traspaso ($0) al club.`
+                              });
+                            }}
+                            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', background: '#059669' }}
+                            title="Fichar libre por fin de contrato (Ley Bosman)"
+                          >
+                            ✍️ Bosman ($0)
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

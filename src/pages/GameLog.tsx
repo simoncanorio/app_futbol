@@ -104,17 +104,52 @@ export function GameLog() {
       
       {/* Box Score Sidebar */}
       {selectedMatch && (
-        <div style={{width: '400px', background: '#1a1a2e', border: '1px solid #444', borderRadius: '8px', padding: '1.5rem', height: 'fit-content'}}>
+        <div style={{width: '420px', background: '#1a1a2e', border: '1px solid #444', borderRadius: '8px', padding: '1.5rem', height: 'fit-content'}}>
           <h2 style={{marginTop: 0, borderBottom: '1px solid #333', paddingBottom: '0.5rem', textAlign: 'center'}}>
             {teams[selectedMatch.homeTeamId]?.name} {selectedMatch.homeScore} - {selectedMatch.awayScore} {teams[selectedMatch.awayTeamId]?.name}
           </h2>
+
+          {selectedMatch.stats && (
+            <div style={{ background: 'rgba(15, 23, 42, 0.65)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <strong>{selectedMatch.stats.homePossession}%</strong>
+                <span style={{ color: '#94a3b8' }}>Posesión</span>
+                <strong>{selectedMatch.stats.awayPossession}%</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <strong>{selectedMatch.stats.homeXG.toFixed(2)}</strong>
+                <span style={{ color: '#94a3b8' }}>xG (Expected Goals)</span>
+                <strong>{selectedMatch.stats.awayXG.toFixed(2)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <strong>{selectedMatch.stats.homeShots} ({selectedMatch.stats.homeShotsOnTarget})</strong>
+                <span style={{ color: '#94a3b8' }}>Tiros (A puerta)</span>
+                <strong>{selectedMatch.stats.awayShots} ({selectedMatch.stats.awayShotsOnTarget})</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <strong>{selectedMatch.stats.homePassesCompleted}/{selectedMatch.stats.homePassesAttempted}</strong>
+                <span style={{ color: '#94a3b8' }}>Pases Completados</span>
+                <strong>{selectedMatch.stats.awayPassesCompleted}/{selectedMatch.stats.awayPassesAttempted}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <strong>{selectedMatch.stats.homeCorners}</strong>
+                <span style={{ color: '#94a3b8' }}>Córners</span>
+                <strong>{selectedMatch.stats.awayCorners}</strong>
+              </div>
+              {selectedMatch.stats.mvpPlayerName && (
+                <div style={{ textAlign: 'center', marginTop: '4px', color: '#fbbf24', fontWeight: 'bold' }}>
+                  ⭐ MVP: {selectedMatch.stats.mvpPlayerName}
+                </div>
+              )}
+            </div>
+          )}
           
           <h4 style={{color: '#e67e22', borderBottom: '1px solid #333', paddingBottom: '4px'}}>Goles</h4>
           <ul style={{listStyle: 'none', padding: 0, margin: '0 0 1rem 0', fontSize: '14px'}}>
             {selectedMatch.events?.filter(e => e.type === 'goal').map((e, idx) => (
               <li key={idx} style={{marginBottom: '4px'}}>
-                ⚽ {e.minute}' - {players[e.playerId]?.name} 
-                {e.assistId ? <span style={{color: '#aaa', fontSize: '12px'}}> (Asist: {players[e.assistId]?.name})</span> : ''}
+                ⚽ {e.minute}' - {e.playerName || players[e.playerId]?.name || `Jugador #${e.playerId}`} 
+                {(e.assistName || e.assistId) ? <span style={{color: '#aaa', fontSize: '12px'}}> (Asist: {e.assistName || players[e.assistId!]?.name})</span> : ''}
                 <span style={{color: '#666', fontSize: '12px', marginLeft: '8px'}}>({teams[e.teamId]?.name})</span>
               </li>
             ))}
@@ -123,16 +158,16 @@ export function GameLog() {
             )}
           </ul>
 
-          <h4 style={{color: '#eab308', borderBottom: '1px solid #333', paddingBottom: '4px'}}>Tarjetas</h4>
+          <h4 style={{color: '#eab308', borderBottom: '1px solid #333', paddingBottom: '4px'}}>Tarjetas & Incidencias</h4>
           <ul style={{listStyle: 'none', padding: 0, margin: 0, fontSize: '14px'}}>
-            {selectedMatch.events?.filter(e => e.type === 'yellow_card' || e.type === 'red_card').map((e, idx) => (
+            {selectedMatch.events?.filter(e => e.type === 'yellow_card' || e.type === 'red_card' || e.type === 'injury').map((e, idx) => (
               <li key={idx} style={{marginBottom: '4px'}}>
-                {e.type === 'yellow_card' ? '🟨' : '🟥'} {e.minute}' - {players[e.playerId]?.name}
+                {e.type === 'yellow_card' ? '🟨' : e.type === 'red_card' ? '🟥' : '🏥'} {e.minute}' - {e.playerName || players[e.playerId]?.name || `Jugador #${e.playerId}`}
                 <span style={{color: '#666', fontSize: '12px', marginLeft: '8px'}}>({teams[e.teamId]?.name})</span>
               </li>
             ))}
-            {(!selectedMatch.events || selectedMatch.events.filter(e => e.type === 'yellow_card' || e.type === 'red_card').length === 0) && (
-              <li style={{color: '#888'}}>Sin tarjetas.</li>
+            {(!selectedMatch.events || selectedMatch.events.filter(e => e.type === 'yellow_card' || e.type === 'red_card' || e.type === 'injury').length === 0) && (
+              <li style={{color: '#888'}}>Sin tarjetas ni lesiones.</li>
             )}
           </ul>
         </div>

@@ -84,6 +84,50 @@ export interface AdvancedPlayerStats {
   yellowCards: number;
   secondYellowCards: number;
   redCards: number;
+
+  // Valoración & Portería Avanzada
+  saves?: number;
+  goalsConceded?: number;
+  xGOT?: number;
+  averageRating?: number;
+  matchRatings?: number[];
+  manOfTheMatch?: number;
+}
+
+export interface DetailedPlayerAttributes {
+  acceleration: number;
+  sprintSpeed: number;
+  positioning: number;
+  finishing: number;
+  shotPower: number;
+  longShots: number;
+  volleys: number;
+  penalties: number;
+  vision: number;
+  crossing: number;
+  freeKickAccuracy: number;
+  shortPassing: number;
+  longPassing: number;
+  curve: number;
+  agility: number;
+  balance: number;
+  reactions: number;
+  ballControl: number;
+  composure: number;
+  interceptions: number;
+  headingAccuracy: number;
+  defAwareness: number;
+  standingTackle: number;
+  slidingTackle: number;
+  jumping: number;
+  stamina: number;
+  strength: number;
+  aggression: number;
+  gkDiving: number;
+  gkHandling: number;
+  gkKicking: number;
+  gkPositioning: number;
+  gkReflexes: number;
 }
 
 export function getInitialPlayerStats(): AdvancedPlayerStats {
@@ -100,7 +144,8 @@ export function getInitialPlayerStats(): AdvancedPlayerStats {
     dribbledPast: 0, clearances: 0, shotsBlocked: 0, errorsLeadingToShot: 0, errorsLeadingToGoal: 0, penaltiesConceded: 0,
     dribblesAttempted: 0, dribblesCompleted: 0, duelsWon: 0, duelsLost: 0, groundDuelsWon: 0, groundDuelsLost: 0,
     aerialDuelsWon: 0, aerialDuelsLost: 0, possessionLost: 0, foulsCommitted: 0, foulsReceived: 0, offsides: 0,
-    yellowCards: 0, secondYellowCards: 0, redCards: 0
+    yellowCards: 0, secondYellowCards: 0, redCards: 0,
+    saves: 0, goalsConceded: 0, xGOT: 0, averageRating: 0, matchRatings: [], manOfTheMatch: 0
   };
 }
 
@@ -114,6 +159,7 @@ export interface Player {
   potential: number;
   position: 'POR' | 'DEF' | 'MED' | 'DEL';
   specificPosition?: 'POR' | 'DFC' | 'LI' | 'LD' | 'CAD' | 'CAI' | 'MCD' | 'MC' | 'MCO' | 'MI' | 'MD' | 'EI' | 'ED' | 'DC' | 'SD';
+  secondaryPositions?: string[];
   contract: number;
   stats: AdvancedPlayerStats;
   historicalStats?: Record<number, AdvancedPlayerStats>; // season -> stats
@@ -126,10 +172,16 @@ export interface Player {
     defending: number;
     physical: number;
   };
+  detailedAttributes?: DetailedPlayerAttributes;
+  playStyles?: string[];
   bio?: {
     height: number;
     weight: number;
     country: string;
+    preferredFoot?: 'Left' | 'Right';
+    weakFoot?: number;
+    skillMoves?: number;
+    workRate?: string;
   };
   lineupStatus?: 'starter' | 'bench' | 'reserve' | 'youth';
   pitchPosition?: string;
@@ -161,10 +213,14 @@ export interface Player {
   unhappy?: boolean;
   transferRequest?: boolean;
   injuryType?: string;
-  cards?: { yellow: number; red: number; suspended: boolean };
+  cards?: { yellow: number; red: number; suspended: boolean; seasonYellows?: number };
   releaseClause?: number; // Cláusula de rescisión obligatoria
   mentorId?: number; // Id of veteran player mentoring this prospect
   loanBuyObligation?: boolean; // If true, loan has mandatory purchase clause
+  tacticalRole?: string; // e.g. 'Falso 9', 'Lateral Invertido', 'Organizador Adelantado', 'Extremo Interior', 'Todocampista'
+  squadRole?: 'Estrella' | 'Titular' | 'Rotación' | 'Promesa';
+  internationalCaps?: number;
+  internationalGoals?: number;
 }
 
 export interface Team {
@@ -172,14 +228,25 @@ export interface Team {
   leagueId: number;
   name: string;
   domesticLeague: string; // 'LaLiga' o 'Premier League'
+  divisionLevel?: 1 | 2; // 1 = Primera División, 2 = Segunda División (Pool de Ascenso)
   overall: number; 
   prestige?: number; // 0 to 100 (Club Prestige Rating)
+  eloRating?: number; // Dynamic club Elo rating (base 1500 - 2100)
+  formation?: string; // '4-3-3', '4-4-2', '4-2-3-1', '3-5-2'
   tacticalStyle?: string; // e.g. Tiki-Taka, Gegenpressing, Contraataque
+  mentality?: 'Ultra-Defensiva' | 'Defensiva' | 'Equilibrada' | 'Ofensiva' | 'Ataque Total' | string;
+  pressLine?: 'Bloque Bajo' | 'Media' | 'Alta' | string;
+  passingTempo?: 'Corto' | 'Mixto' | 'Directo' | string;
+  captainId?: number | null;
+  penaltyTakerId?: number | null;
+  freeKickTakerId?: number | null;
+  cornerTakerId?: number | null;
   wins: number;
   draws: number;
   losses: number;
   goalsFor: number;
   goalsAgainst: number;
+  form?: ('W' | 'D' | 'L')[];
   budget: number;
   population: number;
   attendance: number;
@@ -225,6 +292,78 @@ export interface Team {
   };
   trainingFocus?: 'balance' | 'attacking' | 'defending' | 'physical' | 'technical' | 'recovery';
   teamChemistry?: number; // 0 to 100
+  bankLoan?: {
+    principal: number;
+    weeklyPayment: number;
+    weeksRemaining: number;
+  };
+  lastActionWeeks?: {
+    board?: number;
+    fans?: number;
+    pepTalk?: number;
+  };
+}
+
+export interface MatchEvent {
+  type: 'goal' | 'yellow_card' | 'red_card' | 'substitution' | 'injury' | 'missed_penalty' | 'woodwork';
+  subType?: 'open_play' | 'penalty' | 'free_kick' | 'header' | 'long_shot' | 'counter' | 'second_yellow';
+  playerId: number;
+  playerName?: string;
+  teamId: number;
+  assistId?: number;
+  assistName?: string;
+  subOutId?: number;
+  subOutName?: string;
+  minute: number;
+  xG?: number;
+  description?: string;
+}
+
+export interface ShotTelemetry {
+  x: number;
+  y: number;
+  xG: number;
+  isGoal: boolean;
+  isOnTarget: boolean;
+  teamId: number;
+  playerName: string;
+  minute: number;
+}
+
+export interface MatchTeamStats {
+  homePossession: number;
+  awayPossession: number;
+  homeXG: number;
+  awayXG: number;
+  homeShots: number;
+  awayShots: number;
+  homeShotsOnTarget: number;
+  awayShotsOnTarget: number;
+  homeBigChances: number;
+  awayBigChances: number;
+  homePassesAttempted: number;
+  homePassesCompleted: number;
+  awayPassesAttempted: number;
+  awayPassesCompleted: number;
+  homeCorners: number;
+  awayCorners: number;
+  homeFouls: number;
+  awayFouls: number;
+  homeOffsides: number;
+  awayOffsides: number;
+  homeSaves: number;
+  awaySaves: number;
+  mvpPlayerId?: number;
+  mvpPlayerName?: string;
+  playerRatings?: Record<number, number>;
+  weather?: 'Soleado' | 'Lluvia' | 'Noche' | 'Viento';
+  attendance?: number;
+  shotsMap?: ShotTelemetry[];
+  penaltyShootout?: {
+    homePenalties: number;
+    awayPenalties: number;
+    kicks: { teamId: number; playerName: string; scored: boolean; round: number }[];
+  };
 }
 
 export interface Match {
@@ -237,13 +376,10 @@ export interface Match {
   week: number;
   isPlayed: boolean;
   type: 'league' | 'cup' | 'continental' | 'europa';
-  events?: {
-    type: 'goal' | 'yellow_card' | 'red_card';
-    playerId: number;
-    teamId: number;
-    assistId?: number;
-    minute: number;
-  }[];
+  leg?: 1 | 2;
+  aggregateWinnerId?: number;
+  events?: MatchEvent[];
+  stats?: MatchTeamStats;
 }
 
 export interface SeasonHistory {
@@ -257,6 +393,9 @@ export interface SeasonHistory {
   topScorerId: number;
   bestKeeperId: number;
   goldenBoyId: number;
+  cupChampionId?: number;
+  championsLeagueChampionId?: number;
+  europaLeagueChampionId?: number;
 }
 
 export interface Transaction {
@@ -309,6 +448,24 @@ export interface GMHistoryEntry {
   titleWon?: string;
 }
 
+export interface TransferOffer {
+  id?: number;
+  leagueId: number;
+  playerId: number;
+  playerName: string;
+  playerPosition: string;
+  playerOverall: number;
+  fromAiTeamId: number;
+  fromAiTeamName: string;
+  toUserTeamId: number;
+  offerType: 'transfer' | 'loan' | 'release_clause';
+  amount: number;
+  wageOffered: number;
+  week: number;
+  season: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'clause_paid';
+}
+
 export class FootballDB extends Dexie {
   leagues!: Table<League, number>;
   players!: Table<Player, number>;
@@ -319,6 +476,7 @@ export class FootballDB extends Dexie {
   notes!: Table<Note, number>;
   scoutMissions!: Table<ScoutMission, number>;
   gmHistory!: Table<GMHistoryEntry, number>;
+  transferOffers!: Table<TransferOffer, number>;
 
   constructor() {
     super('FootballGM_DB_v2'); 
@@ -338,6 +496,9 @@ export class FootballDB extends Dexie {
     });
     this.version(6).stores({
       gmHistory: '++id, leagueId, season, teamId'
+    });
+    this.version(7).stores({
+      transferOffers: '++id, leagueId, toUserTeamId, playerId, status'
     });
   }
 }
@@ -380,4 +541,59 @@ export function formatMoney(val: number): string {
 export function isTransferWindowOpen(week: number): boolean {
   // Summer window: weeks 1-4, Winter window: weeks 19-22
   return (week >= 1 && week <= 4) || (week >= 19 && week <= 22);
+}
+
+export function getDetailedAttributes(p: Partial<Player>): DetailedPlayerAttributes {
+  if (p.detailedAttributes) return p.detailedAttributes;
+  const ovr = p.overall || 72;
+  const pos = p.position || 'MED';
+  const spec = getSpecificPosition(p);
+  const pac = p.attributes?.pace ?? ovr;
+  const sho = p.attributes?.shooting ?? (pos === 'DEL' ? ovr : pos === 'MED' ? ovr - 5 : ovr - 18);
+  const pas = p.attributes?.passing ?? (pos === 'MED' ? ovr + 2 : ovr - 4);
+  const dri = p.attributes?.dribbling ?? (pos === 'DEL' || pos === 'MED' ? ovr : ovr - 8);
+  const def = p.attributes?.defending ?? (pos === 'DEF' ? ovr + 2 : pos === 'MED' ? ovr - 8 : ovr - 28);
+  const phy = p.attributes?.physical ?? ovr - 2;
+
+  const isWinger = ['EI', 'ED', 'MI', 'MD', 'CAD', 'CAI'].includes(spec);
+  const isStriker = ['DC', 'SD'].includes(spec);
+  const isPlaymaker = ['MCO', 'MC'].includes(spec);
+  const isCenterBack = spec === 'DFC';
+  const isGK = pos === 'POR';
+
+  return {
+    acceleration: Math.min(99, isWinger ? pac + 2 : pac),
+    sprintSpeed: Math.min(99, pac),
+    positioning: Math.min(99, isStriker ? sho + 3 : sho),
+    finishing: Math.min(99, isStriker ? sho + 3 : sho - 1),
+    shotPower: Math.min(99, Math.round((sho * 0.7) + (phy * 0.3))),
+    longShots: Math.min(99, isPlaymaker ? sho + 2 : sho - 2),
+    volleys: Math.min(99, sho - 2),
+    penalties: Math.min(99, isStriker ? sho + 2 : sho - 3),
+    vision: Math.min(99, isPlaymaker ? pas + 3 : pas),
+    crossing: Math.min(99, isWinger || ['LI', 'LD'].includes(spec) ? pas + 3 : pas - 4),
+    freeKickAccuracy: Math.min(99, isPlaymaker ? pas + 1 : pas - 5),
+    shortPassing: Math.min(99, pas + 2),
+    longPassing: Math.min(99, isPlaymaker || spec === 'MCD' ? pas + 1 : pas - 3),
+    curve: Math.min(99, Math.round((pas + dri) / 2) - 2),
+    agility: Math.min(99, isWinger ? dri + 3 : isCenterBack ? dri - 8 : dri),
+    balance: Math.min(99, dri - 1),
+    reactions: Math.min(99, ovr + 1),
+    ballControl: Math.min(99, dri + 1),
+    composure: Math.min(99, ovr),
+    interceptions: Math.min(99, spec === 'MCD' ? def + 3 : def),
+    headingAccuracy: Math.min(99, isCenterBack || isStriker ? Math.max(def, sho, phy) : Math.round((def + phy) / 2) - 5),
+    defAwareness: Math.min(99, def + 1),
+    standingTackle: Math.min(99, def + 1),
+    slidingTackle: Math.min(99, def - 2),
+    jumping: Math.min(99, phy),
+    stamina: Math.min(99, phy + 2),
+    strength: Math.min(99, isCenterBack ? phy + 4 : phy),
+    aggression: Math.min(99, phy - 2),
+    gkDiving: isGK ? Math.min(99, ovr + 1) : 14,
+    gkHandling: isGK ? Math.min(99, ovr - 1) : 14,
+    gkKicking: isGK ? Math.min(99, pas) : 14,
+    gkPositioning: isGK ? Math.min(99, ovr) : 14,
+    gkReflexes: isGK ? Math.min(99, ovr + 2) : 14
+  };
 }

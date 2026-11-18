@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Team, type League } from '../db/db';
+import { db, type Team, type League, type Match } from '../db/db';
+import { sortStandingsWithTiebreakers } from '../utils/standingsUtils';
 import './Standings.css';
 
 export function Standings() {
   const { leagueId } = useParams();
-  const [league, setLeague] = useState<League | null>(null);
+  const [, setLeague] = useState<League | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [playedMatches, setPlayedMatches] = useState<Match[]>([]);
   const [selectedDomestic, setSelectedDomestic] = useState<string>('LaLiga');
   const [domesticLeagues, setDomesticLeagues] = useState<string[]>([]);
   
@@ -17,7 +19,11 @@ export function Standings() {
       if(!l) return;
       setLeague(l);
 
-      const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
+      const [allTeams, allPlayed] = await Promise.all([
+        db.teams.where('leagueId').equals(lid).toArray(),
+        db.matches.where('leagueId').equals(lid).filter(m => m.type === 'league' && m.isPlayed).toArray()
+      ]);
+      setPlayedMatches(allPlayed);
       const domLeagues = Array.from(new Set(allTeams.map(t => t.domesticLeague)));
       setDomesticLeagues(domLeagues);
       if (l.userTeamId) {
@@ -36,15 +42,11 @@ export function Standings() {
     load();
   }, [leagueId]);
 
-  const displayedTeams = teams
-    .filter(t => t.domesticLeague === selectedDomestic)
-    .sort((a, b) => {
-      const ptsA = (a.wins * 3) + a.draws;
-      const ptsB = (b.wins * 3) + b.draws;
-      const gdA = a.goalsFor - a.goalsAgainst;
-      const gdB = b.goalsFor - b.goalsAgainst;
-      return ptsB - ptsA || gdB - gdA || b.goalsFor - a.goalsFor;
-    });
+  const displayedTeams = sortStandingsWithTiebreakers(
+    teams.filter(t => t.domesticLeague === selectedDomestic),
+    playedMatches,
+    selectedDomestic
+  );
 
   return (
     <div className="page-container standings-page">

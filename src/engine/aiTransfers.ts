@@ -1,4 +1,6 @@
 import { db, type Team, type Player, type League } from '../db/db';
+import { calculateTransferAskingPrice, calculateExpectedAnnualWage } from './valuationEngine';
+import { autoSelectLineupForTeam } from '../utils/lineupUtils';
 
 export async function processAITransfers(league: League, allTeams: Team[]) {
   const userTeamId = league.userTeamId;
@@ -7,7 +9,7 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
 
   const allPlayers = await db.players.where('leagueId').equals(league.id!).toArray();
   const playerMap = new Map<number, Player[]>();
-  
+
   for (const p of allPlayers) {
     if (p.teamId) {
       if (!playerMap.has(p.teamId)) playerMap.set(p.teamId, []);
@@ -15,47 +17,79 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
     }
   }
 
-  // Difficulty multiplier
-  let difficultyFactor = 1.1;
-  if (league.difficulty === 'Hard') difficultyFactor = 1.35;
-  if (league.difficulty === 'Insane') difficultyFactor = 1.6;
+  // 1. AI Contract Renewals for expiring key players (Week 1 or Week 19)
+  if (league.currentWeek === 1 || league.currentWeek === 19) {
+    const renewedPlayers: Player[] = [];
+    for (const aiTeam of aiTeams) {
+      const squad = playerMap.get(aiTeam.id!) || [];
+      for (const p of squad) {
+        if ((p.contractYears ?? 2) <= 1 && !p.unhappy && !p.isOnLoan) {
+          const isImportant = p.overall >= aiTeam.overall - 3 || (p.age <= 22 && p.potential >= aiTeam.overall);
+          if (isImportant && Math.random() < 0.82) {
+            const newYears = p.age >= 31 ? 2 : 4;
+            p.contractYears = newYears;
+            p.contractEndSeason = league.season + newYears;
+            p.contract = calculateExpectedAnnualWage(p, aiTeam.prestige || 70);
+            renewedPlayers.push(p);
+          }
+        }
+      }
+    }
+    if (renewedPlayers.length > 0) {
+      await db.players.bulkPut(renewedPlayers);
+    }
+  }
 
-  // 1-3 AI transactions per week in transfer window
-  const transferCount = Math.floor(Math.random() * 3) + 1;
+  // 2. Process 2 to 4 AI Market Operations per week during open transfer windows
+  const transferCount = Math.floor(Math.random() * 3) + 2;
+  const touchedTeamIds = new Set<number>();
 
   for (let tIdx = 0; tIdx < transferCount; tIdx++) {
     const buyer = aiTeams[Math.floor(Math.random() * aiTeams.length)];
-    const buyerPlayers = playerMap.get(buyer.id!) || [];
+    const buyerPlayers = (playerMap.get(buyer.id!) || []).filter(p => p.lineupStatus !== 'youth');
 
-    const isRealMadrid = buyer.name.toLowerCase().includes('madrid') || buyer.name.toLowerCase().includes('real');
-    const isBarca = buyer.name.toLowerCase().includes('catalunya') || buyer.name.toLowerCase().includes('barca') || buyer.name.toLowerCase().includes('barcelona');
-    const isPrem = buyer.domesticLeague === 'Premier League';
+    const nameLow = buyer.name.toLowerCase();
+    const isGalacticoBuyer = nameLow.includes('real madrid') || nameLow.includes('manchester city') || nameLow.includes('paris saint') || nameLow.includes('bayern');
+    const isYouthDeveloper = nameLow.includes('barcelona') || nameLow.includes('dortmund') || nameLow.includes('benfica') || nameLow.includes('sporting') || nameLow.includes('river') || nameLow.includes('boca') || nameLow.includes('brighton');
 
-    // 1. Check positional gaps in buyer team
-    const gks = buyerPlayers.filter(p => p.position === 'POR').length;
-    const defs = buyerPlayers.filter(p => p.position === 'DEF').length;
-    const meds = buyerPlayers.filter(p => p.position === 'MED').length;
-    const fwds = buyerPlayers.filter(p => p.position === 'DEL').length;
+    // Check positional needs
+    const gks = buyerPlayers.filter(p => p.position === 'POR');
+    const defs = buyerPlayers.filter(p => p.position === 'DEF');
+    const meds = buyerPlayers.filter(p => p.position === 'MED');
+    const fwds = buyerPlayers.filter(p => p.position === 'DEL');
 
     let targetPosition: 'POR' | 'DEF' | 'MED' | 'DEL' | null = null;
-    if (gks < 2) targetPosition = 'POR';
-    else if (fwds < 3) targetPosition = 'DEL';
-    else if (defs < 5) targetPosition = 'DEF';
-    else if (meds < 5) targetPosition = 'MED';
+    if (gks.length < 2) targetPosition = 'POR';
+    else if (fwds.length < 3) targetPosition = 'DEL';
+    else if (defs.length < 6) targetPosition = 'DEF';
+    else if (meds.length < 6) targetPosition = 'MED';
+    else {
+      // Find weakest starter position to upgrade
+      const starters = buyerPlayers.filter(p => p.lineupStatus === 'starter');
+      if (starters.length > 0) {
+        const weakest = [...starters].sort((a, b) => a.overall - b.overall)[0];
+        if (weakest) targetPosition = weakest.position;
+      }
+    }
 
-    // 2. Try signing Free Agent if squad is small
-    const freeAgents = allPlayers.filter(p => !p.teamId);
-    if (buyerPlayers.length < 20 && freeAgents.length > 0) {
+    // Option A: Sign Free Agent if squad is thin or good FA available
+    const freeAgents = allPlayers.filter(p => !p.teamId && !p.isScouted);
+    if (buyerPlayers.length < 21 && freeAgents.length > 0) {
       let faCandidates = targetPosition ? freeAgents.filter(p => p.position === targetPosition) : freeAgents;
       if (faCandidates.length === 0) faCandidates = freeAgents;
 
       faCandidates.sort((a, b) => b.overall - a.overall);
-      const topFA = faCandidates[0];
+      const topFA = faCandidates.find(p => p.overall >= buyer.overall - 5);
 
-      if (topFA && topFA.overall >= 68) {
+      if (topFA) {
         topFA.teamId = buyer.id!;
         topFA.lineupStatus = 'reserve';
+        topFA.contract = calculateExpectedAnnualWage(topFA, buyer.prestige || 70);
+        topFA.contractYears = topFA.age >= 31 ? 2 : 3;
+        topFA.contractEndSeason = league.season + topFA.contractYears;
         await db.players.put(topFA);
+        playerMap.get(buyer.id!)?.push(topFA);
+        touchedTeamIds.add(buyer.id!);
 
         await db.transactions.add({
           leagueId: league.id!,
@@ -72,115 +106,214 @@ export async function processAITransfers(league: League, allTeams: Team[]) {
       }
     }
 
-    // 3. Trade/Transfer candidate targets from other AI teams
-    let candidatePlayers = allPlayers.filter(p => p.teamId && p.teamId !== buyer.id! && p.teamId !== userTeamId);
+    // Option B: Permanent Transfer or Loan from another AI club
+    let candidatePlayers = allPlayers.filter(
+      p => p.teamId && p.teamId !== buyer.id! && p.teamId !== userTeamId && p.lineupStatus !== 'youth' && !p.isOnLoan
+    );
 
     if (targetPosition) {
       const posFiltered = candidatePlayers.filter(p => p.position === targetPosition);
       if (posFiltered.length > 0) candidatePlayers = posFiltered;
     }
 
-    if (isRealMadrid) {
-      candidatePlayers = candidatePlayers.filter(p => p.overall >= 82);
-    } else if (isBarca) {
-      candidatePlayers = candidatePlayers.filter(p => p.age <= 23 && p.potential >= 80);
+    if (isGalacticoBuyer) {
+      candidatePlayers = candidatePlayers.filter(p => p.overall >= 82 || (p.age <= 22 && p.potential >= 87));
+    } else if (isYouthDeveloper) {
+      candidatePlayers = candidatePlayers.filter(p => (p.age <= 24 && p.potential >= buyer.overall) || p.overall >= buyer.overall - 1);
     } else {
-      const currentAvg = buyerPlayers.length > 0 ? buyerPlayers.reduce((a, b) => a + b.overall, 0) / buyerPlayers.length : 70;
-      candidatePlayers = candidatePlayers.filter(p => p.overall >= currentAvg - 2);
+      candidatePlayers = candidatePlayers.filter(p => p.overall >= buyer.overall - 2 && p.overall <= buyer.overall + 5);
     }
 
     if (candidatePlayers.length === 0) continue;
 
-    // Pick top target from best available candidates
-    candidatePlayers.sort((a, b) => b.overall - a.overall);
-    const target = candidatePlayers[Math.floor(Math.random() * Math.min(5, candidatePlayers.length))];
+    // Prioritize transfer-listed or unhappy players, then highest OVR/potential
+    candidatePlayers.sort((a, b) => {
+      const scoreA = a.overall + (a.isTransferListed ? 4 : 0) + (a.unhappy ? 3 : 0);
+      const scoreB = b.overall + (b.isTransferListed ? 4 : 0) + (b.unhappy ? 3 : 0);
+      return scoreB - scoreA;
+    });
 
+    const target = candidatePlayers[Math.floor(Math.random() * Math.min(6, candidatePlayers.length))];
     const sellerTeamId = target.teamId!;
     const seller = aiTeams.find(x => x.id === sellerTeamId);
+    if (!seller) continue;
 
-    // Player Personality, Prestige & Morale Checks (Task 1 & Task 3)
-    if (seller) {
+    // Don't let seller drop below minimum squad size (16 senior players)
+    const sellerSenior = (playerMap.get(seller.id!) || []).filter(p => p.lineupStatus !== 'youth');
+    if (sellerSenior.length <= 16) continue;
+
+    // Check if this should be a loan deal (young reserve player at bigger club -> smaller club)
+    const isLoanDeal = target.age <= 22 && target.lineupStatus !== 'starter' && seller.overall >= buyer.overall + 3;
+
+    // Prestige, Ambition & Loyalty checks (for permanent transfers)
+    if (!isLoanDeal) {
       const buyerPrestige = buyer.prestige || 70;
       const sellerPrestige = seller.prestige || 70;
       const playerMorale = target.morale || 85;
 
-      // Unhappy players (morale < 40 or transfer listed) WANT to leave!
-      // Otherwise, players hesitation check if buyer prestige is significantly lower
-      if (buyerPrestige < sellerPrestige - 12 && playerMorale > 40 && !target.unhappy && !target.isTransferListed) {
-        continue; // Refuses transfer to lower prestige club unless unhappy!
+      if (buyerPrestige < sellerPrestige - 10 && playerMorale > 45 && !target.unhappy && !target.isTransferListed) {
+        continue;
       }
-
-      if ((target.personality === 'Ambicioso' || target.overall >= 84) && buyer.overall < seller.overall - 4 && !target.isTransferListed) {
-        continue; // Ambicious player refuses transfer to smaller club!
+      if ((target.personality === 'Ambicioso' || target.overall >= 84) && buyer.overall < seller.overall - 3 && !target.isTransferListed) {
+        continue;
       }
-    }
-
-    // Loyal players refuse to leave unless transfer listed
-    if (target.personality === 'Leal' && !target.isTransferListed && Math.random() < 0.75) {
-      continue;
-    }
-
-    // Real Madrid vs Barcelona Rivalry Lock Check (Task 3)
-    let rivalryMultiplier = 1.0;
-    if (seller) {
-      const sellerIsReal = seller.name.toLowerCase().includes('madrid') || seller.name.toLowerCase().includes('real');
-      const sellerIsBarca = seller.name.toLowerCase().includes('catalunya') || seller.name.toLowerCase().includes('barca') || seller.name.toLowerCase().includes('barcelona');
-
-      if ((isRealMadrid && sellerIsBarca) || (isBarca && sellerIsReal)) {
-        rivalryMultiplier = 2.5; // Exorbitant anti-rivalry release clause fee!
+      if (target.personality === 'Leal' && !target.isTransferListed && Math.random() < 0.78) {
+        continue;
       }
     }
 
-    // Greedy personality increases fee
-    const greedyMultiplier = target.personality === 'Avaricioso' ? 1.35 : 1.0;
+    const valuation = calculateTransferAskingPrice(target, seller, buyer, league.difficulty);
+    const fee = isLoanDeal ? Math.round(valuation.marketValue * 0.08) : valuation.askingPrice;
 
-    const fee = Math.round(target.contract * (isPrem ? 1.4 : 1.2) * difficultyFactor * rivalryMultiplier * greedyMultiplier);
     if (buyer.budget < fee) continue;
 
-    // Transfer execution
+    // Execute Transfer or Loan
     target.teamId = buyer.id!;
-    buyer.budget -= fee;
+    target.isTransferListed = false;
+    target.unhappy = false;
+    target.transferRequest = false;
+    target.morale = Math.min(100, (target.morale || 80) + 10);
 
-    if (seller) {
-      seller.budget += fee;
-      await db.teams.put(seller);
+    if (isLoanDeal) {
+      target.isOnLoan = true;
+      target.loanedFromTeamId = sellerTeamId;
+      target.buyOptionFee = Math.round(valuation.marketValue * 1.15);
+    } else {
+      target.contract = calculateExpectedAnnualWage(target, buyer.prestige || 70);
+      target.contractYears = target.age >= 30 ? 2 : 4;
+      target.contractEndSeason = league.season + target.contractYears;
+      target.releaseClause = Math.round(valuation.marketValue * 2.8);
     }
 
-    await db.players.put(target);
-    await db.teams.put(buyer);
+    buyer.budget -= fee;
+    seller.budget += fee;
 
-    // 5. Transfer list surplus management: if buyer now has surplus in target position, list lowest OVR player
-    const updatedBuyerPlayers = [...buyerPlayers, target];
-    const samePosSurplus = updatedBuyerPlayers.filter(p => p.position === target.position).sort((a, b) => a.overall - b.overall);
-    if (samePosSurplus.length > 5) {
-      const surplus = samePosSurplus[0];
-      if (surplus.id !== target.id) {
+    await db.players.put(target);
+    await db.teams.bulkPut([buyer, seller]);
+
+    // Update in-memory map
+    const sList = playerMap.get(sellerTeamId) || [];
+    playerMap.set(sellerTeamId, sList.filter(p => p.id !== target.id));
+    if (!playerMap.has(buyer.id!)) playerMap.set(buyer.id!, []);
+    playerMap.get(buyer.id!)!.push(target);
+
+    touchedTeamIds.add(buyer.id!);
+    touchedTeamIds.add(sellerTeamId);
+
+    // Surplus management
+    const updatedBuyerPos = (playerMap.get(buyer.id!) || []).filter(p => p.position === target.position && p.lineupStatus !== 'youth');
+    if (updatedBuyerPos.length > 6) {
+      const surplus = [...updatedBuyerPos].sort((a, b) => a.overall - b.overall)[0];
+      if (surplus && surplus.id !== target.id && !surplus.isOnLoan) {
         surplus.isTransferListed = true;
         await db.players.put(surplus);
       }
     }
 
-    // Record Transaction
     await db.transactions.add({
       leagueId: league.id!,
-      type: 'transfer',
+      type: isLoanDeal ? 'loan' : 'transfer',
       playerId: target.id!,
       fromTeamId: sellerTeamId,
       toTeamId: buyer.id!,
       amount: fee,
       season: league.season,
       week: league.currentWeek,
-      date: Date.now()
+      date: Date.now(),
+      buyOptionPrice: isLoanDeal ? target.buyOptionFee : undefined
     });
 
-    // Generate news note if high-profile move
-    if (target.overall >= 84 || rivalryMultiplier > 1.5) {
+    if (target.overall >= 83 || valuation.rivalryMultiplier > 1.5) {
       await db.notes.add({
         leagueId: league.id!,
         entityType: 'general',
-        text: `🔥 TRASPASO BOMBA: ${buyer.name} fichó a ${target.name} (${target.position}, OVR ${target.overall}) por $${(fee / 1_000_000).toFixed(2)}M.`,
+        text: `🔥 ${valuation.rivalryName ? `¡BOMBAZO EN ${valuation.rivalryName.toUpperCase()}!` : 'FICHAJE ESTELAR:'} ${buyer.name} incorpora a ${target.name} (${target.position}, OVR ${target.overall}) desde ${seller.name} por $${(fee / 1_000_000).toFixed(2)}M.`,
         createdAt: Date.now()
       });
+    }
+  }
+
+  // Re-select optimal lineups and recalculate team overall for clubs that made transfers
+  for (const tid of touchedTeamIds) {
+    await autoSelectLineupForTeam(tid);
+  }
+
+  // 3. Bidirectional Market: Generate Incoming AI Offers for User's Players!
+  if (userTeamId && Math.random() < 0.70) {
+    const userTeam = allTeams.find(t => t.id === userTeamId);
+    const userSquad = (playerMap.get(userTeamId) || []).filter(p => p.lineupStatus !== 'youth' && !p.isOnLoan);
+
+    if (userTeam && userSquad.length >= 16) {
+      // Prioritize transfer-listed, unhappy, or standout players
+      const candidates = [...userSquad].sort((a, b) => {
+        const sA = (a.isTransferListed ? 25 : 0) + (a.unhappy ? 18 : 0) + (a.stats?.goals || 0) * 1.5 + a.overall * 0.4;
+        const sB = (b.isTransferListed ? 25 : 0) + (b.unhappy ? 18 : 0) + (b.stats?.goals || 0) * 1.5 + b.overall * 0.4;
+        return sB - sA;
+      });
+
+      const targetPlayer = candidates[Math.floor(Math.random() * Math.min(4, candidates.length))];
+      if (targetPlayer && targetPlayer.id) {
+        const existingPending = await db.transferOffers
+          .where('playerId')
+          .equals(targetPlayer.id)
+          .filter(o => o.status === 'pending')
+          .count();
+
+        if (existingPending === 0) {
+          const suitorPool = aiTeams.filter(t => t.overall >= targetPlayer.overall - 5 && t.budget >= 8_000_000);
+          const suitor = suitorPool.length > 0
+            ? suitorPool[Math.floor(Math.random() * suitorPool.length)]
+            : aiTeams[Math.floor(Math.random() * aiTeams.length)];
+
+          if (suitor && suitor.id) {
+            const val = calculateTransferAskingPrice(targetPlayer, userTeam, suitor, 'Normal');
+            const isYoungReserve = targetPlayer.age <= 21 && targetPlayer.lineupStatus !== 'starter';
+            const clause = targetPlayer.releaseClause || val.marketValue * 2.8;
+            const triggersClause =
+              !isYoungReserve &&
+              !targetPlayer.isTransferListed &&
+              targetPlayer.overall >= 82 &&
+              suitor.budget >= clause * 1.15 &&
+              clause <= val.marketValue * 1.5;
+
+            const offerType = triggersClause ? 'release_clause' : isYoungReserve ? 'loan' : 'transfer';
+            const offeredAmount = triggersClause
+              ? clause
+              : isYoungReserve
+              ? Math.round(val.marketValue * 0.1)
+              : Math.min(suitor.budget, Math.round(val.marketValue * (0.9 + Math.random() * 0.25)));
+
+            const wageOffered = calculateExpectedAnnualWage(targetPlayer, suitor.prestige || 75);
+
+            await db.transferOffers.add({
+              leagueId: league.id!,
+              playerId: targetPlayer.id,
+              playerName: targetPlayer.name,
+              playerPosition: targetPlayer.position,
+              playerOverall: targetPlayer.overall,
+              fromAiTeamId: suitor.id,
+              fromAiTeamName: suitor.name,
+              toUserTeamId: userTeamId,
+              offerType,
+              amount: offeredAmount,
+              wageOffered,
+              week: league.currentWeek,
+              season: league.season,
+              status: 'pending'
+            });
+
+            await db.notes.add({
+              leagueId: league.id!,
+              entityType: 'team',
+              entityId: userTeamId,
+              text: triggersClause
+                ? `🚨 ¡ALERTA DE CLÁUSULA! ${suitor.name} ha depositado la cláusula de rescisión de $${(offeredAmount / 1_000_000).toFixed(1)}M por ${targetPlayer.name}. Ve a Transferencias para intentar renovarle de emergencia.`
+                : `📩 OFERTA RECIBIDA: ${suitor.name} ha presentado una oferta formal de ${offerType === 'loan' ? 'cesión' : `$${(offeredAmount / 1_000_000).toFixed(2)}M`} por ${targetPlayer.name}.`,
+              createdAt: Date.now()
+            });
+          }
+        }
+      }
     }
   }
 }

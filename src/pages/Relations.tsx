@@ -57,32 +57,68 @@ export function Relations() {
     return 'Peligro Crítico';
   };
 
-  // Interactive Manager Actions
+  // Interactive Manager Actions (with 3-week cooldown protection)
+  const curWeek = league?.currentWeek || 1;
+  const canBoardMeet = !team?.lastActionWeeks?.board || curWeek >= team.lastActionWeeks.board + 3;
+  const canFanAddress = !team?.lastActionWeeks?.fans || curWeek >= team.lastActionWeeks.fans + 3;
+  const canPepTalk = !team?.lastActionWeeks?.pepTalk || curWeek >= team.lastActionWeeks.pepTalk + 3;
+
   const handleBoardMeeting = async () => {
     if (!team) return;
+    if (!canBoardMeet) {
+      setActionFeedback(`⏳ Ya te reuniste recientemente con la Junta Directiva. Podrás solicitar otra reunión en la Jornada ${(team.lastActionWeeks?.board || 1) + 3}.`);
+      return;
+    }
     const boost = Math.floor(Math.random() * 5) + 3;
     const updatedBoard = Math.min(100, boardConfidence + boost);
-    team.boardConfidence = updatedBoard;
-    await db.teams.put(team);
-    setTeam({ ...team });
-    setActionFeedback(`✔ Has presentado el informe trimestral a la Junta Directiva. Confianza aumentada a ${updatedBoard}%.`);
+    const updated: Team = {
+      ...team,
+      boardConfidence: updatedBoard,
+      lastActionWeeks: { ...(team.lastActionWeeks || {}), board: curWeek }
+    };
+    await db.teams.put(updated);
+    setTeam(updated);
+    setActionFeedback(`✔ Has presentado el informe deportivo a la Junta Directiva. Confianza aumentada a ${updatedBoard}%.`);
     setTimeout(() => setActionFeedback(null), 5000);
   };
 
   const handleFanAddress = async () => {
     if (!team) return;
-    setActionFeedback(`📣 Has publicado una carta abierta a la afición en redes del club. Los aficionados agradecen tu cercanía y compromiso.`);
+    if (!canFanAddress) {
+      setActionFeedback(`⏳ Debes esperar hasta la Jornada ${(team.lastActionWeeks?.fans || 1) + 3} para emitir otro comunicado oficial.`);
+      return;
+    }
+    const updated: Team = {
+      ...team,
+      hype: Math.min(100, (team.hype || 60) + 4),
+      lastActionWeeks: { ...(team.lastActionWeeks || {}), fans: curWeek }
+    };
+    await db.teams.put(updated);
+    setTeam(updated);
+    setActionFeedback(`📣 Has publicado una carta abierta a la afición. El entusiasmo y la asistencia prevista suben (+4 Hype).`);
     setTimeout(() => setActionFeedback(null), 5000);
   };
 
   const handleTeamPepTalk = async () => {
-    if (players.length === 0) return;
+    if (players.length === 0 || !team) return;
+    if (!canPepTalk) {
+      setActionFeedback(`⏳ Ya impartiste una charla grupal hace poco. Espera a la Jornada ${(team.lastActionWeeks?.pepTalk || 1) + 3} para no saturar al vestuario.`);
+      return;
+    }
     const updatedPlayers = players.map(p => ({
       ...p,
       morale: Math.min(100, (p.morale ?? 85) + 5)
     }));
-    await db.players.bulkPut(updatedPlayers);
+    const updatedTeam: Team = {
+      ...team,
+      lastActionWeeks: { ...(team.lastActionWeeks || {}), pepTalk: curWeek }
+    };
+    await Promise.all([
+      db.players.bulkPut(updatedPlayers),
+      db.teams.put(updatedTeam)
+    ]);
     setPlayers(updatedPlayers);
+    setTeam(updatedTeam);
     setActionFeedback(`🔥 ¡Charla motivacional impartida en el vestuario! La moral de toda la plantilla ha aumentado +5 puntos.`);
     setTimeout(() => setActionFeedback(null), 5000);
   };

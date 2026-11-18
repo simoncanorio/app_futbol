@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { type Match, type Team, type Player, db } from '../../db/db';
-import { Play, Pause, SkipForward, Volume2, VolumeX, Shield, RefreshCw, AlertTriangle, Trophy } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { type Match, type Team, type Player, type MatchEvent, type MatchTeamStats, db } from '../../db/db';
+import { simulateMatch, applyMatchOutcomeToDatabase } from '../../engine/matchEngine';
+import { Play, Pause, SkipForward, Volume2, VolumeX, Shield, RefreshCw } from 'lucide-react';
 import './LiveMatchEngine.css';
 
 interface LiveMatchEngineProps {
@@ -18,7 +19,6 @@ export function LiveMatchEngine({
   homeTeam,
   awayTeam,
   homePlayers,
-  awayPlayers,
   onFinish,
   onClose
 }: LiveMatchEngineProps) {
@@ -27,24 +27,27 @@ export function LiveMatchEngine({
   const [speed, setSpeed] = useState<number>(1);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  const [homeScore, setHomeScore] = useState(match.homeScore || 0);
-  const [awayScore, setAwayScore] = useState(match.awayScore || 0);
+  const [homeScore, setHomeScore] = useState(0);
+  const [awayScore, setAwayScore] = useState(0);
 
-  const [homeTactic, setHomeTactic] = useState<'Tiki-Taka' | 'Gegenpress' | 'Autobús' | 'Equilibrada'>('Equilibrada');
-  const [awayTactic] = useState<'Tiki-Taka' | 'Gegenpress' | 'Autobús' | 'Equilibrada'>('Equilibrada');
-  
-  const [events, setEvents] = useState<Required<Match>['events']>(match.events || []);
+  const [homeTactic, setHomeTactic] = useState<string>(homeTeam.tacticalStyle || 'Tiki-Taka (Posesión)');
+  const [awayTactic] = useState<string>(awayTeam.tacticalStyle || 'Equilibrada');
 
-  // 3D pitch coordinates (x%, y%, z-height px)
+  const [visibleEvents, setVisibleEvents] = useState<MatchEvent[]>([]);
   const [ballPos, setBallPos] = useState<{ x: number; y: number; z: number }>({ x: 50, y: 50, z: 0 });
-  const [momentum, setMomentum] = useState<number>(50); // 0 (Away dom) to 100 (Home dom)
-  const [weather] = useState<'Soleado' | 'Lluvia' | 'Noche'>('Soleado');
+  const [momentum, setMomentum] = useState<number>(50);
+  const [weather, setWeather] = useState<'Soleado' | 'Lluvia' | 'Noche' | 'Viento'>('Soleado');
 
   const [showSubModal, setShowSubModal] = useState(false);
   const [selectedStarter, setSelectedStarter] = useState<Player | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Store pre-computed deep engine result
+  const simResultRef = useRef<(Match & { updatedPlayers?: Player[] }) | null>(null);
+  const [fullStats, setFullStats] = useState<MatchTeamStats | null>(null);
 
   const starters = homePlayers.filter(p => p.lineupStatus === 'starter' || !p.lineupStatus).slice(0, 11);
-  const bench = homePlayers.filter(p => p.lineupStatus === 'bench' || !starters.includes(p));
+  const bench = homePlayers.filter(p => p.lineupStatus === 'bench' || (!starters.includes(p) && p.lineupStatus !== 'youth'));
 
   const playSynthSound = (type: 'whistle' | 'cheer' | 'kick' | 'post') => {
     if (!soundEnabled) return;
@@ -96,105 +99,103 @@ export function LiveMatchEngine({
         osc.start();
         osc.stop(ctx.currentTime + 0.25);
       }
-    } catch (err) {
-      console.warn('Audio not available:', err);
+    } catch {
+      // ignore audio errors
     }
   };
 
   useEffect(() => {
+    let mounted = true;
     playSynthSound('whistle');
+
+    async function initSimulation() {
+      const res = await simulateMatch(
+        match.leagueId,
+        { ...homeTeam, tacticalStyle: homeTactic },
+        awayTeam,
+        match.week,
+        match.type || 'league',
+        false // Do not persist until match finishes
+      );
+      if (!mounted) return;
+      simResultRef.current = res;
+      if (res.stats) {
+        setFullStats(res.stats);
+        setWeather(res.stats.weather || 'Soleado');
+        setMomentum(res.stats.homePossession);
+      }
+    }
+
+    initSimulation();
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
     if (!isPlaying || minute >= 90) return;
 
-    const intervalMs = Math.max(120, 1000 / speed);
+    const intervalMs = Math.max(110, 900 / speed);
     const timer = setInterval(() => {
       setMinute(prev => {
         const nextMin = prev + 1;
+        const sim = simResultRef.current;
 
-        // Tactical AI calculation
-        let homeTacticalBonus = 0;
-        let awayTacticalBonus = 0;
+        if (sim && sim.events) {
+          const minEvents = sim.events.filter(ev => ev.minute === nextMin);
+          if (minEvents.length > 0) {
+            setVisibleEvents(curr => [...curr, ...minEvents]);
 
-        if (homeTactic === 'Tiki-Taka') homeTacticalBonus += 4;
-        if (homeTactic === 'Gegenpress') homeTacticalBonus += 6;
-        if (homeTactic === 'Autobús') homeTacticalBonus -= 4;
-
-        if (awayTactic === 'Tiki-Taka') awayTacticalBonus += 4;
-        if (awayTactic === 'Gegenpress') awayTacticalBonus += 6;
-
-        // Overall difference factor
-        const ovrDiff = (homeTeam.overall + homeTacticalBonus) - (awayTeam.overall + awayTacticalBonus);
-        
-        // Home advantage (+3 OVR equivalent)
-        const totalBonus = ovrDiff + 3;
-
-        // Realistic goal chances per minute
-        const baseHomeChance = Math.max(0.012, 0.026 + totalBonus * 0.0015);
-        const baseAwayChance = Math.max(0.012, 0.026 - totalBonus * 0.0015);
-
-        // Football Randomness ("tinte random")
-        const rand = Math.random();
-        const luckFactor = (Math.random() - 0.5) * 0.01;
-
-        // Ball movement animation coordinates with Z height
-        if (rand < 0.35) {
-          // Home Attack
-          setBallPos({
-            x: 65 + Math.random() * 28,
-            y: 20 + Math.random() * 60,
-            z: Math.random() > 0.6 ? 25 + Math.random() * 30 : 0
-          });
-          setMomentum(prevM => Math.min(95, prevM + 2));
-        } else if (rand < 0.70) {
-          // Away Attack
-          setBallPos({
-            x: 8 + Math.random() * 28,
-            y: 20 + Math.random() * 60,
-            z: Math.random() > 0.6 ? 25 + Math.random() * 30 : 0
-          });
-          setMomentum(prevM => Math.max(5, prevM - 2));
-        } else {
-          // Midfield duel
-          setBallPos({
-            x: 40 + Math.random() * 20,
-            y: 25 + Math.random() * 50,
-            z: 0
-          });
-        }
-
-        // Random goal events with realistic player rating weighting
-        if (rand < baseHomeChance + luckFactor && Math.random() < 0.48) {
-          // Home Goal!
-          const strikers = starters.filter(p => p.position === 'DEL' || p.position === 'MED');
-          const scorer = strikers.length > 0 ? strikers[Math.floor(Math.random() * strikers.length)] : starters[0];
-          
-          setHomeScore(s => s + 1);
-          setBallPos({ x: 95, y: 50, z: 15 });
-          playSynthSound('cheer');
-          setEvents(evs => [
-            ...evs,
-            { type: 'goal', playerId: scorer?.id || 0, teamId: homeTeam.id!, minute: nextMin }
-          ]);
-        } else if (rand > 1 - (baseAwayChance - luckFactor) && Math.random() < 0.48) {
-          // Away Goal!
-          const strikers = awayPlayers.filter(p => p.position === 'DEL' || p.position === 'MED');
-          const scorer = strikers.length > 0 ? strikers[Math.floor(Math.random() * strikers.length)] : awayPlayers[0];
-          
-          setAwayScore(s => s + 1);
-          setBallPos({ x: 5, y: 50, z: 15 });
-          playSynthSound('cheer');
-          setEvents(evs => [
-            ...evs,
-            { type: 'goal', playerId: scorer?.id || 0, teamId: awayTeam.id!, minute: nextMin }
-          ]);
-        } else if (Math.random() < 0.01) {
-          // Shot off the post/bar (tinte random!)
-          playSynthSound('post');
+            for (const ev of minEvents) {
+              if (ev.type === 'goal') {
+                if (ev.teamId === homeTeam.id) {
+                  setHomeScore(s => s + 1);
+                  setBallPos({ x: 94, y: 50, z: 16 });
+                } else {
+                  setAwayScore(s => s + 1);
+                  setBallPos({ x: 6, y: 50, z: 16 });
+                }
+                playSynthSound('cheer');
+              } else if (ev.type === 'woodwork' || ev.type === 'missed_penalty') {
+                playSynthSound('post');
+              } else if (ev.type === 'red_card' || ev.type === 'yellow_card') {
+                playSynthSound('whistle');
+              }
+            }
+          } else {
+            // Normal ball movement animation
+            const rand = Math.random();
+            const homeBias = (fullStats?.homePossession || 50) / 100;
+            if (rand < homeBias * 0.7) {
+              setBallPos({
+                x: 60 + Math.random() * 30,
+                y: 20 + Math.random() * 60,
+                z: Math.random() > 0.65 ? 20 + Math.random() * 25 : 0
+              });
+            } else if (rand < 0.72) {
+              setBallPos({
+                x: 10 + Math.random() * 30,
+                y: 20 + Math.random() * 60,
+                z: Math.random() > 0.65 ? 20 + Math.random() * 25 : 0
+              });
+            } else {
+              setBallPos({
+                x: 40 + Math.random() * 20,
+                y: 25 + Math.random() * 50,
+                z: 0
+              });
+            }
+          }
         }
 
         if (nextMin >= 90) {
+          // Also include any stoppage / extra-time events (>90')
+          if (sim && sim.events) {
+            const extraEvs = sim.events.filter(ev => ev.minute > 90);
+            if (extraEvs.length > 0) {
+              setVisibleEvents(sim.events);
+            }
+            setHomeScore(sim.homeScore);
+            setAwayScore(sim.awayScore);
+          }
           playSynthSound('whistle');
           setIsPlaying(false);
         }
@@ -203,28 +204,15 @@ export function LiveMatchEngine({
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [isPlaying, minute, speed, homeTactic, awayTactic, homeTeam, awayTeam]);
+  }, [isPlaying, minute, speed, homeTeam.id, fullStats]);
 
   const handleInstantSim = () => {
-    let finalH = homeScore;
-    let finalA = awayScore;
-    const newEvs = [...events];
-
-    for (let m = minute + 1; m <= 90; m++) {
-      if (Math.random() < 0.028) {
-        finalH++;
-        const scorer = starters[Math.floor(Math.random() * starters.length)];
-        newEvs.push({ type: 'goal', playerId: scorer?.id || 0, teamId: homeTeam.id!, minute: m });
-      } else if (Math.random() < 0.025) {
-        finalA++;
-        const scorer = awayPlayers[Math.floor(Math.random() * awayPlayers.length)];
-        newEvs.push({ type: 'goal', playerId: scorer?.id || 0, teamId: awayTeam.id!, minute: m });
-      }
+    const sim = simResultRef.current;
+    if (sim) {
+      setHomeScore(sim.homeScore);
+      setAwayScore(sim.awayScore);
+      setVisibleEvents(sim.events || []);
     }
-
-    setHomeScore(finalH);
-    setAwayScore(finalA);
-    setEvents(newEvs);
     setMinute(90);
     setIsPlaying(false);
     playSynthSound('whistle');
@@ -235,13 +223,100 @@ export function LiveMatchEngine({
 
     selectedStarter.lineupStatus = 'bench';
     sub.lineupStatus = 'starter';
+    sub.pitchPosition = selectedStarter.pitchPosition;
+    selectedStarter.pitchPosition = undefined;
 
     await db.players.put(selectedStarter);
     await db.players.put(sub);
 
+    setVisibleEvents(evs => [
+      ...evs,
+      {
+        type: 'substitution',
+        playerId: sub.id!,
+        playerName: sub.name,
+        subOutId: selectedStarter.id!,
+        subOutName: selectedStarter.name,
+        teamId: homeTeam.id!,
+        minute: Math.max(1, minute),
+        description: `🔄 Cambio táctico: Entra ${sub.name} por ${selectedStarter.name}`
+      }
+    ]);
+
     setSelectedStarter(null);
     setShowSubModal(false);
   };
+
+  const handleSaveAndFinish = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const sim = simResultRef.current;
+      if (sim) {
+        if (sim.updatedPlayers && sim.updatedPlayers.length > 0) {
+          await db.players.bulkPut(sim.updatedPlayers);
+        }
+        await applyMatchOutcomeToDatabase(
+          match.leagueId,
+          match,
+          {
+            homeScore: sim.homeScore,
+            awayScore: sim.awayScore,
+            events: visibleEvents.length > 0 ? visibleEvents : sim.events,
+            stats: sim.stats
+          },
+          homeTeam,
+          awayTeam
+        );
+        onFinish(sim.homeScore, sim.awayScore, visibleEvents.length > 0 ? visibleEvents : sim.events);
+      } else {
+        onFinish(homeScore, awayScore, visibleEvents);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const progressRatio = Math.min(1, minute / 90);
+  const liveHomeXG = ((fullStats?.homeXG || 0) * progressRatio).toFixed(2);
+  const liveAwayXG = ((fullStats?.awayXG || 0) * progressRatio).toFixed(2);
+  const liveHomeShots = Math.round((fullStats?.homeShots || 0) * progressRatio);
+  const liveAwayShots = Math.round((fullStats?.awayShots || 0) * progressRatio);
+
+  // Dynamic 22-player spatial shifting based on ballPos & tactical block height
+  const ballShiftX = (ballPos.x - 50) * 0.28; // -14 to +14
+  const ballShiftY = (ballPos.y - 50) * 0.16; // -8 to +8
+  const homeBlockOffset = homeTactic.includes('Gegenpressing') ? 6 : homeTactic.includes('Autobús') ? -8 : 0;
+
+  const homeBaseCoords = [
+    { role: 'GK', x: 7, y: 50, xFactor: 0.15, yFactor: 0.15 },
+    { role: 'LI', x: 26, y: 20, xFactor: 0.85, yFactor: 0.7 },
+    { role: 'DFC', x: 23, y: 40, xFactor: 0.65, yFactor: 0.5 },
+    { role: 'DFC', x: 23, y: 60, xFactor: 0.65, yFactor: 0.5 },
+    { role: 'LD', x: 26, y: 80, xFactor: 0.85, yFactor: 0.7 },
+    { role: 'MC', x: 50, y: 28, xFactor: 1.0, yFactor: 0.85 },
+    { role: 'MCD', x: 44, y: 50, xFactor: 0.85, yFactor: 0.75 },
+    { role: 'MC', x: 50, y: 72, xFactor: 1.0, yFactor: 0.85 },
+    { role: 'EI', x: 74, y: 22, xFactor: 1.05, yFactor: 0.9 },
+    { role: 'DC', x: 78, y: 50, xFactor: 0.95, yFactor: 0.75 },
+    { role: 'ED', x: 74, y: 78, xFactor: 1.05, yFactor: 0.9 }
+  ];
+
+  const awayBaseCoords = [
+    { role: 'GK', x: 93, y: 50, xFactor: 0.15, yFactor: 0.15 },
+    { role: 'LD', x: 74, y: 20, xFactor: 0.85, yFactor: 0.7 },
+    { role: 'DFC', x: 77, y: 40, xFactor: 0.65, yFactor: 0.5 },
+    { role: 'DFC', x: 77, y: 60, xFactor: 0.65, yFactor: 0.5 },
+    { role: 'LI', x: 74, y: 80, xFactor: 0.85, yFactor: 0.7 },
+    { role: 'MC', x: 50, y: 30, xFactor: 1.0, yFactor: 0.85 },
+    { role: 'MCD', x: 56, y: 50, xFactor: 0.85, yFactor: 0.75 },
+    { role: 'MC', x: 50, y: 70, xFactor: 1.0, yFactor: 0.85 },
+    { role: 'ED', x: 26, y: 24, xFactor: 1.05, yFactor: 0.9 },
+    { role: 'DC', x: 22, y: 50, xFactor: 0.95, yFactor: 0.75 },
+    { role: 'EI', x: 26, y: 76, xFactor: 1.05, yFactor: 0.9 }
+  ];
+
+  const visibleShots = (fullStats?.shotsMap || []).filter(s => s.minute <= minute);
 
   return (
     <div className="live-match-modal-overlay">
@@ -252,7 +327,7 @@ export function LiveMatchEngine({
             <Shield size={28} color={homeTeam.kit?.primaryColor || '#ef4444'} />
             <div>
               <h2>{homeTeam.name}</h2>
-              <span className="team-sub">OVR {homeTeam.overall} • {homeTactic}</span>
+              <span className="team-sub">OVR {homeTeam.overall} • xG {liveHomeXG} ({liveHomeShots} tiros)</span>
             </div>
           </div>
 
@@ -264,7 +339,7 @@ export function LiveMatchEngine({
           <div className="team-badge-box align-right">
             <div>
               <h2>{awayTeam.name}</h2>
-              <span className="team-sub">OVR {awayTeam.overall} • {awayTactic}</span>
+              <span className="team-sub">OVR {awayTeam.overall} • xG {liveAwayXG} ({liveAwayShots} tiros)</span>
             </div>
             <Shield size={28} color={awayTeam.kit?.primaryColor || '#3b82f6'} />
           </div>
@@ -283,6 +358,31 @@ export function LiveMatchEngine({
                 <div className="goal-net right" />
               </div>
 
+              {/* xG Shot Map Dots */}
+              {visibleShots.map((sh, idx) => {
+                const sz = Math.round(7 + sh.xG * 14);
+                return (
+                  <div
+                    key={idx}
+                    title={`${sh.minute}' ${sh.playerName} (xG: ${sh.xG}) ${sh.isGoal ? '⚽ GOL' : sh.isOnTarget ? 'A puerta' : 'Fuera/Bloqueado'}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${sh.x}%`,
+                      top: `${sh.y}%`,
+                      width: `${sz}px`,
+                      height: `${sz}px`,
+                      borderRadius: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      backgroundColor: sh.isGoal ? '#10b981' : sh.teamId === homeTeam.id ? 'rgba(239, 68, 68, 0.65)' : 'rgba(56, 189, 248, 0.65)',
+                      border: sh.isGoal ? '2px solid #fbbf24' : '1px solid rgba(255,255,255,0.6)',
+                      boxShadow: sh.isGoal ? '0 0 8px #10b981' : 'none',
+                      zIndex: 2,
+                      pointerEvents: 'auto'
+                    }}
+                  />
+                );
+              })}
+
               {/* 3D Ball with height arc */}
               <div
                 className="ball-3d"
@@ -295,33 +395,35 @@ export function LiveMatchEngine({
                 <div className="ball-shadow" style={{ opacity: 1 - ballPos.z / 60 }} />
               </div>
 
-              {/* 3D Home & Away Player Tokens */}
+              {/* 3D Home & Away Player Tokens (Dynamic 2D Positioning) */}
               <div className="players-3d-layer">
-                {/* Home Team Formation (Red/User) */}
-                <div className="player-3d home" style={{ left: '8%', top: '50%' }}>GK</div>
-                <div className="player-3d home" style={{ left: '26%', top: '22%' }}>DEF</div>
-                <div className="player-3d home" style={{ left: '24%', top: '42%' }}>DEF</div>
-                <div className="player-3d home" style={{ left: '24%', top: '60%' }}>DEF</div>
-                <div className="player-3d home" style={{ left: '26%', top: '80%' }}>DEF</div>
-                <div className="player-3d home" style={{ left: '52%', top: '30%' }}>MED</div>
-                <div className="player-3d home" style={{ left: '50%', top: '50%' }}>MED</div>
-                <div className="player-3d home" style={{ left: '52%', top: '70%' }}>MED</div>
-                <div className="player-3d home" style={{ left: '76%', top: '24%' }}>DEL</div>
-                <div className="player-3d home" style={{ left: '79%', top: '50%' }}>DEL</div>
-                <div className="player-3d home" style={{ left: '76%', top: '76%' }}>DEL</div>
+                {homeBaseCoords.map((pos, idx) => {
+                  const px = Math.max(5, Math.min(92, pos.x + (ballShiftX + homeBlockOffset) * pos.xFactor));
+                  const py = Math.max(10, Math.min(90, pos.y + ballShiftY * pos.yFactor));
+                  return (
+                    <div
+                      key={`h-${idx}`}
+                      className="player-3d home"
+                      style={{ left: `${px}%`, top: `${py}%`, transition: 'left 0.45s ease, top 0.45s ease' }}
+                    >
+                      {pos.role}
+                    </div>
+                  );
+                })}
 
-                {/* Away Team Formation (Blue/AI) */}
-                <div className="player-3d away" style={{ left: '92%', top: '50%' }}>GK</div>
-                <div className="player-3d away" style={{ left: '74%', top: '22%' }}>DEF</div>
-                <div className="player-3d away" style={{ left: '76%', top: '42%' }}>DEF</div>
-                <div className="player-3d away" style={{ left: '76%', top: '60%' }}>DEF</div>
-                <div className="player-3d away" style={{ left: '74%', top: '80%' }}>DEF</div>
-                <div className="player-3d away" style={{ left: '48%', top: '32%' }}>MED</div>
-                <div className="player-3d away" style={{ left: '50%', top: '52%' }}>MED</div>
-                <div className="player-3d away" style={{ left: '48%', top: '72%' }}>MED</div>
-                <div className="player-3d away" style={{ left: '24%', top: '25%' }}>DEL</div>
-                <div className="player-3d away" style={{ left: '21%', top: '50%' }}>DEL</div>
-                <div className="player-3d away" style={{ left: '24%', top: '75%' }}>DEL</div>
+                {awayBaseCoords.map((pos, idx) => {
+                  const px = Math.max(8, Math.min(95, pos.x + ballShiftX * pos.xFactor));
+                  const py = Math.max(10, Math.min(90, pos.y + ballShiftY * pos.yFactor));
+                  return (
+                    <div
+                      key={`a-${idx}`}
+                      className="player-3d away"
+                      style={{ left: `${px}%`, top: `${py}%`, transition: 'left 0.45s ease, top 0.45s ease' }}
+                    >
+                      {pos.role}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -329,7 +431,7 @@ export function LiveMatchEngine({
 
         {/* Dynamic Possession Momentum Bar */}
         <div className="momentum-wrapper">
-          <span>Dominio {homeTeam.name} ({momentum}%)</span>
+          <span>Posesión {homeTeam.name} ({momentum}%)</span>
           <div className="momentum-bar">
             <div className="momentum-fill" style={{ width: `${momentum}%` }} />
           </div>
@@ -358,11 +460,21 @@ export function LiveMatchEngine({
 
           <div className="tactic-selector">
             <span>Ajuste Táctico:</span>
-            <select value={homeTactic} onChange={e => setHomeTactic(e.target.value as any)} className="bb-select">
-              <option value="Equilibrada">Equilibrada</option>
-              <option value="Tiki-Taka">Tiki-Taka (Posesión)</option>
-              <option value="Gegenpress">Gegenpressing (Presión Alta)</option>
-              <option value="Autobús">Autobús (Defensiva)</option>
+            <select
+              value={homeTactic}
+              onChange={async e => {
+                setHomeTactic(e.target.value);
+                homeTeam.tacticalStyle = e.target.value;
+                await db.teams.put(homeTeam);
+              }}
+              className="bb-select"
+            >
+              <option value="Tiki-Taka (Posesión)">Tiki-Taka (Posesión)</option>
+              <option value="Gegenpressing (Presión Alta)">Gegenpressing (Presión Alta)</option>
+              <option value="Contraataque Veloz">Contraataque Veloz</option>
+              <option value="Autobús (Catenaccio)">Autobús (Defensiva)</option>
+              <option value="Juego por las Bandas (Centros)">Juego por las Bandas</option>
+              <option value="Fútbol Directo (Balón Largo)">Fútbol Directo</option>
             </select>
           </div>
 
@@ -373,16 +485,24 @@ export function LiveMatchEngine({
 
         {/* Live Commentary Feed */}
         <div className="live-event-feed">
-          <h3>Comentarios y Eventos en Vivo</h3>
+          <h3>Comentarios, xG & Eventos en Vivo {minute >= 90 && fullStats?.mvpPlayerName ? `• ⭐ MVP: ${fullStats.mvpPlayerName}` : ''}</h3>
           <div className="events-scroll">
-            {events.length === 0 ? (
+            {visibleEvents.length === 0 ? (
               <p className="no-events">Minuto {minute}': El colegiado da inicio a las acciones en el terreno de juego.</p>
             ) : (
-              events.map((ev, idx) => (
+              visibleEvents.map((ev, idx) => (
                 <div key={idx} className="event-item">
                   <span className="event-min">{ev.minute}'</span>
                   <span className="event-desc">
-                    ⚽ ¡GOOOOOOL DE {ev.teamId === homeTeam.id ? homeTeam.name : awayTeam.name}!
+                    {ev.description || (
+                      ev.type === 'goal'
+                        ? `⚽ ¡GOOOOL de ${ev.playerName || (ev.teamId === homeTeam.id ? homeTeam.name : awayTeam.name)}!`
+                        : ev.type === 'yellow_card'
+                        ? `🟨 Amarilla para ${ev.playerName || 'jugador'}`
+                        : ev.type === 'red_card'
+                        ? `🟥 ¡Expulsado ${ev.playerName || 'jugador'}!`
+                        : `Evento del partido`
+                    )}
                   </span>
                 </div>
               ))
@@ -392,12 +512,12 @@ export function LiveMatchEngine({
 
         <div className="live-modal-footer">
           {minute >= 90 ? (
-            <button className="create-btn" onClick={() => onFinish(homeScore, awayScore, events)}>
-              Guardar Resultado y Finalizar
+            <button className="create-btn" onClick={handleSaveAndFinish} disabled={isSaving}>
+              {isSaving ? 'Guardando Estadísticas...' : 'Guardar Resultado y Finalizar'}
             </button>
           ) : (
             <button className="settings-btn" onClick={onClose}>
-              Cerrar (Continuar en segundo plano)
+              Cerrar (Cancelar simulación en vivo)
             </button>
           )}
         </div>

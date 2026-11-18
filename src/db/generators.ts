@@ -1,11 +1,16 @@
-import { db, getInitialPlayerStats } from './db';
-import { tmService, mapTMPositionToDB, mapMarketValueToOVR } from '../services/transfermarkt';
+import { db, getInitialPlayerStats, getDetailedAttributes } from './db';
+import { tmService } from '../services/transfermarkt';
 import { EA_FC_DATABASE, type FIFAClubData } from '../services/fifaData';
-import { HISTORICAL_ERAS_DATABASE, type HistoricalClub } from '../services/historicalData';
+import type { HistoricalClub } from '../services/historicalData';
+import { generateLeagueFixtures } from '../engine/fixtureGenerator';
+import { autoSelectLineupForTeam } from '../utils/lineupUtils';
+import { advanceWeek } from '../engine/gameLoop';
 
 const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge', 'Jose', 'Diego', 'Mateo', 'Lucas', 'Martin', 'Leo', 'Hugo', 'Daniel'];
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
 const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'Alemania', 'Italia', 'Portugal', 'Uruguay', 'Colombia'];
+const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Pragmático', 'Ambicioso', 'Leal', 'Avaricioso'];
+const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'normal', 'late_bloomer'];
 
 export const espTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'LaLiga').map(c => c.name);
 export const engTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Premier League').map(c => c.name);
@@ -29,6 +34,37 @@ export function getLeagueTeamNames(competitionId?: string): string[] {
   if (competitionId === 'AR1N') return argTeams.length > 0 ? argTeams : ['River Plate', 'Boca Juniors', 'Racing Club', 'Independiente'];
   if (competitionId === 'WORLD') return worldTeams;
   return espTeams.length > 0 ? espTeams : ['Real Madrid', 'FC Barcelona', 'Atlético de Madrid', 'Athletic Club'];
+}
+
+function getClubTacticalIdentity(clubName: string): {
+  formation: string;
+  tacticalStyle: string;
+  mentality: string;
+  pressLine: string;
+  passingTempo: string;
+} {
+  const n = clubName.toLowerCase();
+  if (n.includes('barcelona') || n.includes('manchester city') || n.includes('arsenal') || n.includes('paris saint')) {
+    return { formation: '4-3-3', tacticalStyle: 'Tiki-Taka (Posesión)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Corto' };
+  }
+  if (n.includes('liverpool') || n.includes('bayern') || n.includes('dortmund') || n.includes('leverkusen') || n.includes('athletic') || n.includes('river')) {
+    return { formation: '4-2-3-1', tacticalStyle: 'Gegenpressing (Presión Alta)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Directo' };
+  }
+  if (n.includes('real madrid')) {
+    return { formation: '4-3-3', tacticalStyle: 'Contraataque Veloz', mentality: 'Ofensiva', pressLine: 'Media', passingTempo: 'Directo' };
+  }
+  if (n.includes('inter') || n.includes('atalanta')) {
+    return { formation: '3-5-2', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto' };
+  }
+  if (n.includes('atletico') || n.includes('atlético') || n.includes('getafe') || n.includes('boca') || n.includes('juventus')) {
+    return { formation: '4-4-2', tacticalStyle: 'Bloque Bajo y Presión Zonal', mentality: 'Defensiva', pressLine: 'Bloque Bajo', passingTempo: 'Directo' };
+  }
+  const styles = [
+    { formation: '4-3-3', tacticalStyle: 'Juego por las Bandas (Centros)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto' },
+    { formation: '4-2-3-1', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Corto' },
+    { formation: '4-4-2', tacticalStyle: 'Contraataque Veloz', mentality: 'Equilibrada', pressLine: 'Bloque Bajo', passingTempo: 'Directo' }
+  ];
+  return styles[clubName.length % styles.length];
 }
 
 export function findFifaClub(teamName: string): FIFAClubData | undefined {
@@ -57,7 +93,7 @@ export function findFifaClub(teamName: string): FIFAClubData | undefined {
     })) return c;
   }
 
-  // 3. Word match (e.g. "Brighton" in "Brighton & Hove Albion", "River" in "River Plate")
+  // 3. Word match
   const targetWords = target.split(/\s+/).filter(w => w.length >= 4);
   if (targetWords.length > 0) {
     for (const c of EA_FC_DATABASE) {
@@ -73,7 +109,8 @@ export function findFifaClub(teamName: string): FIFAClubData | undefined {
   return undefined;
 }
 
-export function findHistoricalClub(teamName: string, year: number): HistoricalClub | undefined {
+export async function findHistoricalClub(teamName: string, year: number): Promise<HistoricalClub | undefined> {
+  const { HISTORICAL_ERAS_DATABASE } = await import('../services/historicalData');
   const clubs = HISTORICAL_ERAS_DATABASE[year];
   if (!clubs || clubs.length === 0) return undefined;
 
@@ -85,19 +122,16 @@ export function findHistoricalClub(teamName: string, year: number): HistoricalCl
 
   const target = clean(teamName);
 
-  // 1. Direct name match
   for (const c of clubs) {
     if (clean(c.name) === target) return c;
   }
 
-  // 2. Contains match with special guard for Barcelona vs Espanyol
   for (const c of clubs) {
     const cClean = clean(c.name);
     if (target.includes('barcelona') && !target.includes('espanyol') && cClean.includes('espanyol')) continue;
     if (cClean.includes(target) || target.includes(cClean)) return c;
   }
 
-  // 3. Significant word match
   const targetWords = target.split(/\s+/).filter(w => w.length >= 4 && !['club', 'futbol', 'real', 'city'].includes(w));
   if (targetWords.length > 0) {
     for (const c of clubs) {
@@ -124,16 +158,17 @@ export async function createNewLeague(
   userTeamIndex: number = -1,
   startYear: number = 2026,
   startPeriod: 'preseason' | 'winter_window' | 'final_stretch' = 'preseason',
-  competitionId: string = 'ES1'
+  competitionId: string = 'ES1',
+  onProgress?: (msg: string) => void
 ): Promise<number> {
-  let initialWeek = 1;
-  if (startPeriod === 'winter_window') initialWeek = 19;
-  if (startPeriod === 'final_stretch') initialWeek = 30;
+  let targetStartWeek = 1;
+  if (startPeriod === 'winter_window') targetStartWeek = 19;
+  if (startPeriod === 'final_stretch') targetStartWeek = 30;
 
   const leagueId = await db.leagues.add({
     name,
     season: startYear,
-    currentWeek: initialWeek,
+    currentWeek: 1,
     difficulty,
     createdAt: Date.now(),
     lastPlayedAt: Date.now(),
@@ -146,27 +181,29 @@ export async function createNewLeague(
   const targetTeams = getLeagueTeamNames(competitionId);
 
   for (const tname of targetTeams) {
-    const histMatch = startYear !== 2026 ? findHistoricalClub(tname, startYear) : undefined;
+    const histMatch = startYear !== 2026 ? await findHistoricalClub(tname, startYear) : undefined;
     const fifaMatch = findFifaClub(tname);
     const isEsp = espTeams.includes(tname);
     const nameLow = tname.toLowerCase();
     let initialPrestige = 70;
-    if (nameLow.includes('madrid') || nameLow.includes('real')) initialPrestige = 98;
-    else if (nameLow.includes('barca') || nameLow.includes('barcelona') || nameLow.includes('catalunya')) initialPrestige = 94;
-    else if (nameLow.includes('city') || nameLow.includes('manchester city')) initialPrestige = 96;
-    else if (nameLow.includes('liverpool') || nameLow.includes('arsenal')) initialPrestige = 90;
+    if (nameLow.includes('madrid') && nameLow.includes('real')) initialPrestige = 98;
+    else if (nameLow.includes('barca') || nameLow.includes('barcelona') || nameLow.includes('catalunya')) initialPrestige = 95;
+    else if (nameLow.includes('manchester city')) initialPrestige = 96;
+    else if (nameLow.includes('liverpool') || nameLow.includes('arsenal')) initialPrestige = 91;
     else if (nameLow.includes('atlético') || nameLow.includes('atletico')) initialPrestige = 88;
     else if (nameLow.includes('bayern')) initialPrestige = 95;
     else if (nameLow.includes('paris') || nameLow.includes('psg')) initialPrestige = 92;
-    else if (nameLow.includes('inter') || nameLow.includes('juventus')) initialPrestige = 90;
-    else if (nameLow.includes('river') || nameLow.includes('boca')) initialPrestige = 85;
+    else if (nameLow.includes('inter') || nameLow.includes('juventus') || nameLow.includes('milan')) initialPrestige = 90;
+    else if (nameLow.includes('river') || nameLow.includes('boca')) initialPrestige = 86;
     else {
       const baseOvr = histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : 78);
-      initialPrestige = Math.min(85, Math.max(50, Math.round((baseOvr - 60) * 2.8)));
+      initialPrestige = Math.min(86, Math.max(52, Math.round((baseOvr - 60) * 2.8)));
     }
 
     let domesticLeague = 'LaLiga';
-    if (fifaMatch && fifaMatch.domesticLeague) {
+    if (competitionId === 'WORLD') {
+      domesticLeague = 'Superliga Mundial';
+    } else if (fifaMatch && fifaMatch.domesticLeague) {
       domesticLeague = fifaMatch.domesticLeague;
     } else if (espTeams.includes(tname)) domesticLeague = 'LaLiga';
     else if (engTeams.includes(tname)) domesticLeague = 'Premier League';
@@ -175,38 +212,57 @@ export async function createNewLeague(
     else if (gerTeams.includes(tname)) domesticLeague = 'Bundesliga';
     else if (argTeams.includes(tname)) domesticLeague = 'Liga Profesional';
 
+    const tacId = getClubTacticalIdentity(tname);
+    const baseOvr = histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : randomInt(76, 85));
     const pop = randomInt(1000000, 12000000);
+
     const teamId = await db.teams.add({
       leagueId,
       domesticLeague,
       name: tname,
-      overall: histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : randomInt(76, 85)),
+      overall: baseOvr,
       prestige: initialPrestige,
-      wins: startPeriod === 'preseason' ? 0 : randomInt(4, 14),
-      draws: startPeriod === 'preseason' ? 0 : randomInt(2, 6),
-      losses: startPeriod === 'preseason' ? 0 : randomInt(3, 10),
-      goalsFor: startPeriod === 'preseason' ? 0 : randomInt(15, 40),
-      goalsAgainst: startPeriod === 'preseason' ? 0 : randomInt(15, 40),
+      eloRating: 1300 + baseOvr * 8,
+      formation: tacId.formation,
+      tacticalStyle: tacId.tacticalStyle,
+      mentality: tacId.mentality,
+      pressLine: tacId.pressLine,
+      passingTempo: tacId.passingTempo,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      form: [],
       budget: fifaMatch ? fifaMatch.budget : randomInt(40, 160) * 1000000,
       population: pop,
-      attendance: randomInt(25000, 80000),
-      ticketPrice: randomInt(40, 140),
+      attendance: randomInt(28000, 78000),
+      ticketPrice: randomInt(45, 125),
       revenue: 0,
       profit: 0,
-      kit: fifaMatch ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern } : { primaryColor: isEsp ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' }
+      hype: Math.min(95, initialPrestige),
+      boardConfidence: 90,
+      facilities: {
+        stadiumLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2,
+        youthLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 78 ? 3 : 2,
+        trainingLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2
+      },
+      kit: fifaMatch
+        ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern }
+        : { primaryColor: isEsp ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' }
     }) as number;
-
 
     createdTeamIds.push(teamId);
 
-    const players = [];
+    const players: any[] = [];
     if (histMatch && histMatch.squad && histMatch.squad.length >= 11) {
-      // Use verified Historical Era squad from Transfermarkt
       for (const hp of histMatch.squad) {
         const isEliteStar = hp.overall >= 89 || hp.marketValue >= 80000000;
-        const clause = isEliteStar ? 1000000000 : Math.max(15000000, Math.round(hp.marketValue * randomInt(3, 5)));
+        const clause = isEliteStar ? 1000000000 : Math.max(15000000, Math.round(hp.marketValue * randomInt(3, 4)));
+        const specPos = (hp.specificPosition || (hp.position === 'POR' ? 'POR' : hp.position === 'DEF' ? 'DFC' : hp.position === 'MED' ? 'MC' : 'DC')) as any;
+        const cYears = randomInt(2, 5);
 
-        players.push({
+        const pObj: any = {
           leagueId,
           teamId,
           name: hp.name,
@@ -214,29 +270,38 @@ export async function createNewLeague(
           overall: hp.overall,
           potential: hp.potential,
           position: hp.position,
-          specificPosition: hp.specificPosition || (hp.position === 'POR' ? 'POR' : hp.position === 'DEF' ? 'DFC' : hp.position === 'MED' ? 'MC' : 'DC'),
-          contract: Math.max(500000, Math.floor(hp.marketValue * 0.07)),
-          contractYears: randomInt(2, 5),
-          contractEndSeason: startYear + randomInt(2, 5),
+          specificPosition: specPos,
+          contract: Math.max(400000, Math.floor(hp.marketValue * 0.075)),
+          contractYears: cYears,
+          contractEndSeason: startYear + cYears,
           releaseClause: clause,
-          morale: randomInt(80, 95),
+          morale: randomInt(82, 95),
+          fatigue: 0,
+          injuryProne: randomInt(15, 55),
+          personality: personalities[Math.floor(Math.random() * personalities.length)],
+          developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
           unhappy: false,
           stats: getInitialPlayerStats(),
           attributes: hp.attributes,
           bio: {
-            height: randomInt(172, 192),
-            weight: randomInt(68, 88),
-            country: hp.country
+            height: randomInt(172, 191),
+            weight: randomInt(68, 86),
+            country: hp.country,
+            preferredFoot: Math.random() < 0.24 ? 'Left' : 'Right',
+            weakFoot: randomInt(3, 5),
+            skillMoves: hp.position === 'DEL' || hp.position === 'MED' ? randomInt(3, 5) : randomInt(2, 3)
           }
-        });
+        };
+        pObj.detailedAttributes = getDetailedAttributes(pObj);
+        players.push(pObj);
       }
     } else if (fifaMatch && fifaMatch.squad.length > 0) {
-      // Use EA FC Database
       for (const fp of fifaMatch.squad) {
         const isEliteStar = fp.overall >= 89 || fp.marketValue >= 100000000;
-        const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 5));
+        const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 4));
+        const cYears = randomInt(2, 5);
 
-        players.push({
+        const pObj: any = {
           leagueId,
           teamId,
           name: fp.name,
@@ -245,75 +310,95 @@ export async function createNewLeague(
           potential: fp.potential,
           position: fp.position,
           specificPosition: fp.specificPosition || (fp.position === 'POR' ? 'POR' : fp.position === 'DEF' ? 'DFC' : fp.position === 'MED' ? 'MC' : 'DC'),
-          contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
-          contractYears: randomInt(2, 5),
-          contractEndSeason: startYear + randomInt(2, 5),
+          secondaryPositions: fp.secondaryPositions,
+          contract: Math.max(400000, Math.floor(fp.marketValue * 0.075)),
+          contractYears: cYears,
+          contractEndSeason: startYear + cYears,
           releaseClause: clause,
-          morale: randomInt(80, 95),
+          morale: randomInt(82, 95),
+          fatigue: 0,
+          injuryProne: randomInt(15, 55),
+          personality: personalities[Math.floor(Math.random() * personalities.length)],
+          developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
           unhappy: false,
           stats: getInitialPlayerStats(),
           attributes: fp.attributes,
+          detailedAttributes: fp.detailedAttributes,
+          playStyles: fp.playStyles,
           bio: {
-            height: randomInt(172, 192),
-            weight: randomInt(68, 88),
-            country: fp.country
+            height: fp.height || randomInt(174, 190),
+            weight: fp.weight || randomInt(68, 86),
+            country: fp.country,
+            preferredFoot: fp.preferredFoot || 'Right',
+            weakFoot: fp.weakFoot || 3,
+            skillMoves: fp.skillMoves || 3
           }
-        });
+        };
+        if (!pObj.detailedAttributes) pObj.detailedAttributes = getDetailedAttributes(pObj);
+        players.push(pObj);
       }
     } else {
-      // Procedural generation fallback with realistic OVRs
       const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
       const specificPositions: ('POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = [
         'POR', 'LI', 'DFC', 'DFC', 'LD', 'MCD', 'MC', 'MCO', 'MI' as any, 'EI', 'DC',
         'POR', 'DFC', 'LD', 'MC', 'MCO', 'ED', 'DC', 'MC', 'LI'
       ];
       for (let i = 0; i < 20; i++) {
-        const overall = randomInt(70, 88);
-        const potential = Math.min(99, overall + randomInt(0, 10));
-        players.push({
+        const overall = randomInt(70, 86);
+        const potential = Math.min(99, overall + randomInt(1, 10));
+        const cYears = randomInt(2, 4);
+        const pObj: any = {
           leagueId,
           teamId,
           name: randomName(),
-          age: randomInt(17, 34),
+          age: randomInt(18, 33),
           overall,
           potential,
           position: positions[i],
           specificPosition: specificPositions[i],
-          contract: randomInt(1000000, 6000000),
-          contractYears: randomInt(2, 4),
-          contractEndSeason: startYear + randomInt(2, 4),
+          contract: randomInt(900000, 5500000),
+          contractYears: cYears,
+          contractEndSeason: startYear + cYears,
           releaseClause: randomInt(15, 80) * 1000000,
           morale: randomInt(80, 95),
+          fatigue: 0,
+          injuryProne: randomInt(15, 55),
+          personality: personalities[Math.floor(Math.random() * personalities.length)],
+          developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
           unhappy: false,
           stats: getInitialPlayerStats(),
           attributes: {
-            pace: randomInt(50, 95),
-            shooting: randomInt(40, 92),
-            passing: randomInt(50, 94),
-            dribbling: randomInt(50, 94),
-            defending: randomInt(35, 90),
-            physical: randomInt(50, 90)
+            pace: randomInt(55, 92),
+            shooting: randomInt(45, 90),
+            passing: randomInt(55, 90),
+            dribbling: randomInt(55, 90),
+            defending: randomInt(40, 88),
+            physical: randomInt(55, 88)
           },
           bio: {
-            height: randomInt(168, 195),
-            weight: randomInt(62, 90),
-            country: countries[Math.floor(Math.random() * countries.length)]
+            height: randomInt(170, 194),
+            weight: randomInt(64, 88),
+            country: countries[Math.floor(Math.random() * countries.length)],
+            preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+            weakFoot: randomInt(2, 5),
+            skillMoves: randomInt(2, 5)
           }
-        });
+        };
+        pObj.detailedAttributes = getDetailedAttributes(pObj);
+        players.push(pObj);
       }
     }
 
-    // Pregenerate 5 Youth Academy (Filial) prospects for every team (Task 7)
+    // Pregenerate 5 Youth Academy (Filial) prospects for every team
     const youthProspects: any[] = [];
     const youthPositions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'MED', 'MED', 'DEL'];
-    const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
-    const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Avaricioso', 'Ambicioso', 'Leal', 'Pragmático'];
-    const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'late_bloomer', 'bust'];
+    const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
 
     for (let y = 0; y < 5; y++) {
-      const ovr = randomInt(62, 74);
-      const pot = Math.min(96, ovr + randomInt(12, 22));
-      youthProspects.push({
+      const ovr = randomInt(62, 73);
+      const pot = Math.min(96, ovr + randomInt(13, 22));
+      const cYears = randomInt(3, 5);
+      const ypObj: any = {
         leagueId,
         teamId,
         name: `${randomName()} (Canterano)`,
@@ -322,40 +407,56 @@ export async function createNewLeague(
         potential: pot,
         position: youthPositions[y],
         specificPosition: youthSpecific[y],
-        contract: randomInt(300000, 900000),
-        contractYears: randomInt(3, 5),
-        contractEndSeason: startYear + randomInt(3, 5),
+        contract: randomInt(250000, 750000),
+        contractYears: cYears,
+        contractEndSeason: startYear + cYears,
         lineupStatus: 'youth',
         personality: personalities[Math.floor(Math.random() * personalities.length)],
         developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
         fatigue: 0,
-        injuryProne: randomInt(10, 75),
+        morale: 92,
+        injuryProne: randomInt(10, 50),
         stats: getInitialPlayerStats(),
         attributes: {
-          pace: randomInt(60, 92),
-          shooting: randomInt(50, 88),
-          passing: randomInt(55, 90),
-          dribbling: randomInt(60, 92),
-          defending: randomInt(40, 82),
-          physical: randomInt(50, 84)
+          pace: randomInt(62, 90),
+          shooting: randomInt(50, 84),
+          passing: randomInt(55, 86),
+          dribbling: randomInt(60, 88),
+          defending: randomInt(40, 80),
+          physical: randomInt(50, 82)
         },
         bio: {
-          height: randomInt(168, 192),
-          weight: randomInt(60, 85),
-          country: countries[Math.floor(Math.random() * countries.length)]
+          height: randomInt(169, 191),
+          weight: randomInt(62, 84),
+          country: countries[Math.floor(Math.random() * countries.length)],
+          preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+          weakFoot: randomInt(2, 4),
+          skillMoves: randomInt(2, 4)
         }
-      });
+      };
+      ypObj.detailedAttributes = getDetailedAttributes(ypObj);
+      youthProspects.push(ypObj);
     }
 
     await db.players.bulkAdd([...players, ...youthProspects]);
+    await autoSelectLineupForTeam(teamId, tacId.formation);
   }
 
   const targetIndex = userTeamIndex >= 0 && userTeamIndex < createdTeamIds.length ? userTeamIndex : 0;
   await db.leagues.update(leagueId, { userTeamId: createdTeamIds[targetIndex] });
 
   // Generate 38 matchdays double round-robin schedule + Copa + Champions fixtures
-  const { generateLeagueFixtures } = await import('../engine/fixtureGenerator');
   await generateLeagueFixtures(leagueId);
+
+  // If starting in Winter Window (Week 19) or Final Stretch (Week 30), simulate earlier matchdays so standings & stats are real!
+  if (targetStartWeek > 1) {
+    for (let w = 1; w < targetStartWeek; w++) {
+      if (onProgress) {
+        onProgress(`Simulando historial de temporada hasta Jornada ${targetStartWeek} (${w}/${targetStartWeek - 1})...`);
+      }
+      await advanceWeek(leagueId);
+    }
+  }
 
   return leagueId;
 }
@@ -369,69 +470,133 @@ export async function createRealLeagueFromTransfermarkt(
   startPeriod: 'preseason' | 'winter_window' | 'final_stretch' = 'preseason',
   onProgress?: (msg: string) => void
 ): Promise<number> {
-  let initialWeek = 1;
-  if (startPeriod === 'winter_window') initialWeek = 19;
-  if (startPeriod === 'final_stretch') initialWeek = 30;
-
-  if (onProgress) onProgress(`Conectando a EA FC / Transfermarkt Database (${startYear})...`);
-
-  const leagueId = await db.leagues.add({
-    name: leagueName,
-    season: startYear,
-    currentWeek: initialWeek,
-    difficulty,
-    createdAt: Date.now(),
-    lastPlayedAt: Date.now(),
-    userTeamId: null,
-    startPeriod,
-    managerReputation: 60
-  });
+  if (onProgress) onProgress(`Conectando a EA FC 26 / Transfermarkt Database (${startYear})...`);
 
   try {
+    // Check if local EA FC / Historical database covers this competition cleanly
     const compData = await tmService.getCompetitionClubs(competitionId, String(startYear));
     const clubs = compData.clubs || [];
-    
+
     if (clubs.length === 0) {
-      throw new Error(`No se encontraron clubes en la API. Usando base de datos EA FC.`);
+      return createNewLeague(leagueName, difficulty, userTeamIndex, startYear, startPeriod, competitionId, onProgress);
     }
+
+    let targetStartWeek = 1;
+    if (startPeriod === 'winter_window') targetStartWeek = 19;
+    if (startPeriod === 'final_stretch') targetStartWeek = 30;
+
+    const leagueId = await db.leagues.add({
+      name: leagueName,
+      season: startYear,
+      currentWeek: 1,
+      difficulty,
+      createdAt: Date.now(),
+      lastPlayedAt: Date.now(),
+      userTeamId: null,
+      startPeriod,
+      managerReputation: 60
+    });
 
     if (onProgress) onProgress(`Cargando ${clubs.length} clubes reales...`);
     const createdTeamIds: number[] = [];
 
     for (let i = 0; i < clubs.length; i++) {
       const club = clubs[i];
-      if (onProgress) onProgress(`[${i + 1}/${clubs.length}] Cargando plantilla de ${club.name}...`);
+      if (onProgress) onProgress(`[${i + 1}/${clubs.length}] Configurando plantilla y táctica de ${club.name}...`);
 
+      const histMatch = startYear !== 2026 ? await findHistoricalClub(club.name, startYear) : undefined;
       const fifaMatch = findFifaClub(club.name);
+      const tacId = getClubTacticalIdentity(club.name);
+      const baseOvr = histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : 78);
+      const nameLow = club.name.toLowerCase();
+      let initialPrestige = Math.min(98, Math.max(55, Math.round((baseOvr - 60) * 2.8)));
+      if (nameLow.includes('real madrid')) initialPrestige = 98;
+      else if (nameLow.includes('barcelona') || nameLow.includes('manchester city') || nameLow.includes('bayern')) initialPrestige = 95;
 
       const pop = randomInt(1000000, 15000000);
       const teamId = await db.teams.add({
         leagueId,
-        domesticLeague: compData.name || 'LaLiga',
+        domesticLeague: competitionId === 'WORLD' ? 'Superliga Mundial' : (compData.name || 'LaLiga'),
         name: club.name,
-        overall: fifaMatch ? fifaMatch.overall : 78,
-        wins: startPeriod === 'preseason' ? 0 : randomInt(4, 14),
-        draws: startPeriod === 'preseason' ? 0 : randomInt(2, 6),
-        losses: startPeriod === 'preseason' ? 0 : randomInt(3, 10),
-        goalsFor: startPeriod === 'preseason' ? 0 : randomInt(15, 40),
-        goalsAgainst: startPeriod === 'preseason' ? 0 : randomInt(15, 40),
-        budget: fifaMatch ? fifaMatch.budget : randomInt(30, 200) * 1000000,
+        overall: baseOvr,
+        prestige: initialPrestige,
+        eloRating: 1300 + baseOvr * 8,
+        formation: tacId.formation,
+        tacticalStyle: tacId.tacticalStyle,
+        mentality: tacId.mentality,
+        pressLine: tacId.pressLine,
+        passingTempo: tacId.passingTempo,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        form: [],
+        budget: fifaMatch ? fifaMatch.budget : randomInt(30, 180) * 1000000,
         population: pop,
-        attendance: randomInt(25000, 75000),
-        ticketPrice: randomInt(40, 120),
+        attendance: randomInt(28000, 76000),
+        ticketPrice: randomInt(45, 120),
         revenue: 0,
         profit: 0,
-        kit: fifaMatch ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern } : { primaryColor: i % 2 === 0 ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' as const }
+        hype: Math.min(95, initialPrestige),
+        boardConfidence: 90,
+        facilities: {
+          stadiumLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2,
+          youthLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 78 ? 3 : 2,
+          trainingLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2
+        },
+        kit: fifaMatch
+          ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern }
+          : { primaryColor: i % 2 === 0 ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' as const }
       }) as number;
 
       createdTeamIds.push(teamId);
 
       const dbPlayers: any[] = [];
-      if (fifaMatch && fifaMatch.squad.length > 0) {
+      if (histMatch && histMatch.squad && histMatch.squad.length >= 11) {
+        for (const hp of histMatch.squad) {
+          const isEliteStar = hp.overall >= 89 || hp.marketValue >= 80000000;
+          const clause = isEliteStar ? 1000000000 : Math.max(15000000, Math.round(hp.marketValue * randomInt(3, 4)));
+          const cYears = randomInt(2, 5);
+          const pObj: any = {
+            leagueId,
+            teamId,
+            name: hp.name,
+            age: hp.age,
+            overall: hp.overall,
+            potential: hp.potential,
+            position: hp.position,
+            specificPosition: (hp.specificPosition || (hp.position === 'POR' ? 'POR' : hp.position === 'DEF' ? 'DFC' : hp.position === 'MED' ? 'MC' : 'DC')) as any,
+            contract: Math.max(400000, Math.floor(hp.marketValue * 0.075)),
+            contractYears: cYears,
+            contractEndSeason: startYear + cYears,
+            releaseClause: clause,
+            morale: randomInt(82, 95),
+            fatigue: 0,
+            injuryProne: randomInt(15, 55),
+            personality: personalities[Math.floor(Math.random() * personalities.length)],
+            developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+            unhappy: false,
+            stats: getInitialPlayerStats(),
+            attributes: hp.attributes,
+            bio: {
+              height: randomInt(172, 191),
+              weight: randomInt(68, 86),
+              country: hp.country,
+              preferredFoot: Math.random() < 0.24 ? 'Left' : 'Right',
+              weakFoot: randomInt(3, 5),
+              skillMoves: randomInt(3, 5)
+            }
+          };
+          pObj.detailedAttributes = getDetailedAttributes(pObj);
+          dbPlayers.push(pObj);
+        }
+      } else if (fifaMatch && fifaMatch.squad.length > 0) {
         for (const fp of fifaMatch.squad) {
           const isEliteStar = fp.overall >= 89 || fp.marketValue >= 100000000;
-          const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 5));
-          dbPlayers.push({
+          const clause = isEliteStar ? 1000000000 : Math.round(fp.marketValue * randomInt(3, 4));
+          const cYears = randomInt(2, 5);
+          const pObj: any = {
             leagueId,
             teamId,
             name: fp.name,
@@ -440,22 +605,33 @@ export async function createRealLeagueFromTransfermarkt(
             potential: fp.potential,
             position: fp.position,
             specificPosition: fp.specificPosition || (fp.position === 'POR' ? 'POR' : fp.position === 'DEF' ? 'DFC' : fp.position === 'MED' ? 'MC' : 'DC'),
-            contract: Math.max(500000, Math.floor(fp.marketValue * 0.07)),
-            contractYears: randomInt(2, 5),
-            contractEndSeason: startYear + randomInt(2, 5),
+            secondaryPositions: fp.secondaryPositions,
+            contract: Math.max(400000, Math.floor(fp.marketValue * 0.075)),
+            contractYears: cYears,
+            contractEndSeason: startYear + cYears,
             releaseClause: clause,
-            morale: randomInt(80, 95),
+            morale: randomInt(82, 95),
+            fatigue: 0,
+            injuryProne: randomInt(15, 55),
+            personality: personalities[Math.floor(Math.random() * personalities.length)],
+            developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
             unhappy: false,
             stats: getInitialPlayerStats(),
             attributes: fp.attributes,
+            detailedAttributes: fp.detailedAttributes,
+            playStyles: fp.playStyles,
             bio: {
-              height: randomInt(172, 192),
-              weight: randomInt(68, 88),
-              country: fp.country
+              height: fp.height || randomInt(174, 190),
+              weight: fp.weight || randomInt(68, 86),
+              country: fp.country,
+              preferredFoot: fp.preferredFoot || 'Right',
+              weakFoot: fp.weakFoot || 3,
+              skillMoves: fp.skillMoves || 3
             }
-          });
+          };
+          if (!pObj.detailedAttributes) pObj.detailedAttributes = getDetailedAttributes(pObj);
+          dbPlayers.push(pObj);
         }
-
       } else {
         const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'DEF', 'DEF', 'MED', 'MED', 'MED', 'MED', 'DEL', 'DEL', 'POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL', 'DEL', 'MED', 'DEF'];
         const specificPositions: ('POR' | 'DFC' | 'LI' | 'LD' | 'MCD' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = [
@@ -464,19 +640,20 @@ export async function createRealLeagueFromTransfermarkt(
         ];
         for (let j = 0; j < 20; j++) {
           const overall = randomInt(72, 85);
-          const potential = Math.min(99, overall + randomInt(0, 10));
-          dbPlayers.push({
+          const potential = Math.min(99, overall + randomInt(1, 10));
+          const cYears = randomInt(2, 4);
+          const pObj: any = {
             leagueId,
             teamId,
             name: randomName(),
-            age: randomInt(17, 34),
+            age: randomInt(18, 33),
             overall,
             potential,
             position: positions[j],
             specificPosition: specificPositions[j],
             contract: randomInt(1000000, 5000000),
-            contractYears: randomInt(2, 4),
-            contractEndSeason: startYear + randomInt(2, 4),
+            contractYears: cYears,
+            contractEndSeason: startYear + cYears,
             stats: getInitialPlayerStats(),
             attributes: {
               pace: randomInt(55, 92),
@@ -489,22 +666,26 @@ export async function createRealLeagueFromTransfermarkt(
             bio: {
               height: randomInt(170, 194),
               weight: randomInt(65, 88),
-              country: countries[Math.floor(Math.random() * countries.length)]
+              country: countries[Math.floor(Math.random() * countries.length)],
+              preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+              weakFoot: 3,
+              skillMoves: 3
             }
-          });
+          };
+          pObj.detailedAttributes = getDetailedAttributes(pObj);
+          dbPlayers.push(pObj);
         }
       }
 
       // Pregenerate 5 Filial prospects
       const youthPositions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'MED', 'MED', 'DEL'];
-      const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI' | 'ED' | 'DC')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
-      const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Avaricioso', 'Ambicioso', 'Leal', 'Pragmático'];
-      const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'late_bloomer', 'bust'];
+      const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
 
       for (let y = 0; y < 5; y++) {
-        const ovr = randomInt(62, 74);
-        const pot = Math.min(96, ovr + randomInt(12, 22));
-        dbPlayers.push({
+        const ovr = randomInt(62, 73);
+        const pot = Math.min(96, ovr + randomInt(13, 22));
+        const cYears = randomInt(3, 5);
+        const ypObj: any = {
           leagueId,
           teamId,
           name: `${randomName()} (Canterano)`,
@@ -513,43 +694,59 @@ export async function createRealLeagueFromTransfermarkt(
           potential: pot,
           position: youthPositions[y],
           specificPosition: youthSpecific[y],
-          contract: randomInt(300000, 900000),
-          contractYears: randomInt(3, 5),
-          contractEndSeason: startYear + randomInt(3, 5),
+          contract: randomInt(250000, 750000),
+          contractYears: cYears,
+          contractEndSeason: startYear + cYears,
           lineupStatus: 'youth',
           personality: personalities[Math.floor(Math.random() * personalities.length)],
           developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
           fatigue: 0,
-          injuryProne: randomInt(10, 75),
+          morale: 92,
+          injuryProne: randomInt(10, 50),
           stats: getInitialPlayerStats(),
           attributes: {
-            pace: randomInt(60, 92),
-            shooting: randomInt(50, 88),
-            passing: randomInt(55, 90),
-            dribbling: randomInt(60, 92),
-            defending: randomInt(40, 82),
-            physical: randomInt(50, 84)
+            pace: randomInt(62, 90),
+            shooting: randomInt(50, 84),
+            passing: randomInt(55, 86),
+            dribbling: randomInt(60, 88),
+            defending: randomInt(40, 80),
+            physical: randomInt(50, 82)
           },
           bio: {
-            height: randomInt(168, 192),
-            weight: randomInt(60, 85),
-            country: countries[Math.floor(Math.random() * countries.length)]
+            height: randomInt(169, 191),
+            weight: randomInt(62, 84),
+            country: countries[Math.floor(Math.random() * countries.length)],
+            preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+            weakFoot: 3,
+            skillMoves: 3
           }
-        });
+        };
+        ypObj.detailedAttributes = getDetailedAttributes(ypObj);
+        dbPlayers.push(ypObj);
       }
 
       await db.players.bulkAdd(dbPlayers);
+      await autoSelectLineupForTeam(teamId, tacId.formation);
     }
 
     const selectedTeamId = userTeamIndex >= 0 && userTeamIndex < createdTeamIds.length ? createdTeamIds[userTeamIndex] : createdTeamIds[0];
     await db.leagues.update(leagueId, { userTeamId: selectedTeamId });
 
-    const { generateLeagueFixtures } = await import('../engine/fixtureGenerator');
     await generateLeagueFixtures(leagueId);
+
+    // Simulate earlier weeks if starting in Winter Window or Final Stretch
+    if (targetStartWeek > 1) {
+      for (let w = 1; w < targetStartWeek; w++) {
+        if (onProgress) {
+          onProgress(`Simulando historial de temporada hasta Jornada ${targetStartWeek} (${w}/${targetStartWeek - 1})...`);
+        }
+        await advanceWeek(leagueId);
+      }
+    }
 
     return leagueId;
   } catch (err: any) {
     console.warn('Fallback to local FIFA Database creation:', err);
-    return createNewLeague(leagueName, difficulty, userTeamIndex, startYear, startPeriod);
+    return createNewLeague(leagueName, difficulty, userTeamIndex, startYear, startPeriod, competitionId, onProgress);
   }
 }

@@ -233,14 +233,22 @@ export function Tactics() {
         const uTeam = await db.teams.get(l.userTeamId);
         setTeam(uTeam || null);
 
+        if (uTeam) {
+          if (uTeam.formation) setSelectedFormation(uTeam.formation);
+          if (uTeam.tacticalStyle) setSelectedStyle(uTeam.tacticalStyle);
+          if (uTeam.mentality) setMentality(uTeam.mentality);
+          if (uTeam.pressLine) setPressLine(uTeam.pressLine);
+          if (uTeam.passingTempo) setPassingTempo(uTeam.passingTempo);
+        }
+
         const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
         setPlayers(p);
 
         if (p.length > 0) {
           const sorted = [...p].sort((a, b) => b.overall - a.overall);
-          setCaptainId(sorted[0].id || null);
-          setPenaltyTakerId(sorted[0].id || null);
-          setFreeKickTakerId(sorted[1]?.id || sorted[0].id || null);
+          setCaptainId(uTeam?.captainId || sorted[0].id || null);
+          setPenaltyTakerId(uTeam?.penaltyTakerId || sorted[0].id || null);
+          setFreeKickTakerId(uTeam?.freeKickTakerId || sorted[1]?.id || sorted[0].id || null);
         }
       }
     }
@@ -249,7 +257,7 @@ export function Tactics() {
 
   const currentSlots = FORMATIONS[selectedFormation] || FORMATIONS['4-3-3'];
   const starters = players.filter(p => p.lineupStatus === 'starter');
-  const bench = players.filter(p => p.lineupStatus !== 'starter');
+  const bench = players.filter(p => p.lineupStatus !== 'starter' && p.lineupStatus !== 'youth');
 
   // Calculate effective team overall taking positional penalties into account (Task 5)
   let totalEffectiveOvr = 0;
@@ -264,6 +272,21 @@ export function Tactics() {
 
   const effectiveTeamOvr = starterCount > 0 ? Math.round(totalEffectiveOvr / starterCount) : (team?.overall || 75);
   const chemResult = calculateTeamChemistry(starters, team || undefined);
+
+  const persistTeamPatch = async (patch: Partial<Team>) => {
+    if (!team) return;
+    const updated = { ...team, ...patch };
+    setTeam(updated);
+    await db.teams.put(updated);
+  };
+
+  const handleFormationChange = async (newFormation: string) => {
+    setSelectedFormation(newFormation);
+    if (!team) return;
+    const updatedPlayers = await autoSelectLineupForTeam(team.id!, newFormation);
+    setPlayers([...updatedPlayers]);
+    await persistTeamPatch({ formation: newFormation });
+  };
 
   const handleDragStart = (e: React.DragEvent, playerId: number) => {
     setDraggedPlayerId(playerId);
@@ -312,15 +335,12 @@ export function Tactics() {
 
   const handleSaveTacticalStyle = async (styleName: string) => {
     setSelectedStyle(styleName);
-    if (team) {
-      team.overall = effectiveTeamOvr;
-      await db.teams.put(team);
-    }
+    await persistTeamPatch({ tacticalStyle: styleName, overall: effectiveTeamOvr });
   };
 
   const handleAutoLineup = async () => {
     if (!team) return;
-    const updated = await autoSelectLineupForTeam(team.id!);
+    const updated = await autoSelectLineupForTeam(team.id!, selectedFormation);
     setPlayers([...updated]);
     alert('⚡ ¡Alineación de 11 titulares configurada automáticamente con los mejores jugadores!');
   };
@@ -392,7 +412,7 @@ export function Tactics() {
               <span style={{ fontWeight: 'bold' }}>Esquema Táctico:</span>
               <select
                 value={selectedFormation}
-                onChange={e => setSelectedFormation(e.target.value)}
+                onChange={e => handleFormationChange(e.target.value)}
                 className="bb-select"
               >
                 {Object.keys(FORMATIONS).map(f => (
@@ -404,7 +424,7 @@ export function Tactics() {
             <div className="football-pitch">
               {currentSlots.map(slot => {
                 const occupant = starters.find(p => p.pitchPosition === slot.id);
-                const penalty = occupant ? getPositionalPenalty(occupant.position, slot.slotType, slot.label) : 0;
+                const penalty = occupant ? getPositionalPenalty(occupant.position, slot.slotType, slot.label, occupant.specificPosition) : 0;
                 const effectiveOvr = occupant ? Math.max(35, occupant.overall - penalty) : 0;
 
                 return (
@@ -551,7 +571,7 @@ export function Tactics() {
             <div className="inst-grid">
               <div className="form-group">
                 <label>Mentalidad Colectiva:</label>
-                <select value={mentality} onChange={e => setMentality(e.target.value)} className="bb-select">
+                <select value={mentality} onChange={e => { setMentality(e.target.value); persistTeamPatch({ mentality: e.target.value }); }} className="bb-select">
                   <option value="Ultra-Defensiva">Ultra-Defensiva</option>
                   <option value="Defensiva">Defensiva</option>
                   <option value="Equilibrada">Equilibrada</option>
@@ -562,7 +582,7 @@ export function Tactics() {
 
               <div className="form-group">
                 <label>Línea de Presión Defensiva:</label>
-                <select value={pressLine} onChange={e => setPressLine(e.target.value)} className="bb-select">
+                <select value={pressLine} onChange={e => { setPressLine(e.target.value); persistTeamPatch({ pressLine: e.target.value }); }} className="bb-select">
                   <option value="Bloque Bajo">Bloque Bajo (Esperar)</option>
                   <option value="Media">Media Distancia</option>
                   <option value="Alta">Presión Alta (Gegenpress)</option>
@@ -571,7 +591,7 @@ export function Tactics() {
 
               <div className="form-group">
                 <label>Ritmo de Pase:</label>
-                <select value={passingTempo} onChange={e => setPassingTempo(e.target.value)} className="bb-select">
+                <select value={passingTempo} onChange={e => { setPassingTempo(e.target.value); persistTeamPatch({ passingTempo: e.target.value }); }} className="bb-select">
                   <option value="Corto">Corto y Paciente</option>
                   <option value="Mixto">Mixto</option>
                   <option value="Directo">Directo y Rápido</option>
@@ -592,7 +612,7 @@ export function Tactics() {
               <label>Capitán del Equipo:</label>
               <select
                 value={captainId || ''}
-                onChange={e => setCaptainId(Number(e.target.value))}
+                onChange={e => { const v = Number(e.target.value); setCaptainId(v); persistTeamPatch({ captainId: v }); }}
                 className="bb-select"
               >
                 {players.map(p => (
@@ -605,7 +625,7 @@ export function Tactics() {
               <label>Lanzador Principal de Penaltis:</label>
               <select
                 value={penaltyTakerId || ''}
-                onChange={e => setPenaltyTakerId(Number(e.target.value))}
+                onChange={e => { const v = Number(e.target.value); setPenaltyTakerId(v); persistTeamPatch({ penaltyTakerId: v }); }}
                 className="bb-select"
               >
                 {players.map(p => (
@@ -618,7 +638,7 @@ export function Tactics() {
               <label>Lanzador de Faltas Directas:</label>
               <select
                 value={freeKickTakerId || ''}
-                onChange={e => setFreeKickTakerId(Number(e.target.value))}
+                onChange={e => { const v = Number(e.target.value); setFreeKickTakerId(v); persistTeamPatch({ freeKickTakerId: v }); }}
                 className="bb-select"
               >
                 {players.map(p => (
@@ -626,6 +646,80 @@ export function Tactics() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <h3 style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.25rem' }}>
+            Roles Tácticos Individuales (Once Titular)
+          </h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            Define el comportamiento específico de cada titular en el motor de partidos (ej. Falso 9, Lateral Invertido, Organizador Adelantado, Extremo Interior).
+          </p>
+
+          <div className="table-responsive">
+            <table className="dash-table">
+              <thead>
+                <tr>
+                  <th>Pos</th>
+                  <th>Titular</th>
+                  <th>OVR</th>
+                  <th>Rol Táctico en Campo</th>
+                  <th>Estatus de Plantilla</th>
+                </tr>
+              </thead>
+              <tbody>
+                {starters.map(st => {
+                  const roleOptions =
+                    st.position === 'POR'
+                      ? ['Portero Tradicional', 'Portero Cierre (Sweeper Keeper)']
+                      : st.position === 'DEF'
+                      ? ['Defensa Central Tapón', 'Central con Salida (Ball-Playing CB)', 'Carrilero Ofensivo', 'Lateral Invertido (Inverted FB)']
+                      : st.position === 'MED'
+                      ? ['Pivote Posicional (Anchor)', 'Organizador Adelantado (Regista)', 'Todocampista (Box-to-Box)', 'Mediapunta Enganche']
+                      : ['Delantero Referencia (Target Man)', 'Falso 9 (False 9)', 'Extremo Interior (Inside Forward)', 'Extremo Puro de Banda'];
+
+                  return (
+                    <tr key={st.id}>
+                      <td className="col-pos">{st.pitchPosition || st.position}</td>
+                      <td><strong>{st.name}</strong></td>
+                      <td className="col-ovr">{st.overall}</td>
+                      <td>
+                        <select
+                          value={st.tacticalRole || roleOptions[0]}
+                          onChange={async e => {
+                            st.tacticalRole = e.target.value;
+                            await db.players.put(st);
+                            setPlayers([...players]);
+                          }}
+                          className="bb-select"
+                          style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                        >
+                          {roleOptions.map(ro => (
+                            <option key={ro} value={ro}>{ro}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={st.squadRole || (st.overall >= 85 ? 'Estrella' : 'Titular')}
+                          onChange={async e => {
+                            st.squadRole = e.target.value as any;
+                            await db.players.put(st);
+                            setPlayers([...players]);
+                          }}
+                          className="bb-select"
+                          style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                        >
+                          <option value="Estrella">⭐ Estrella Indiscutible</option>
+                          <option value="Titular">🟢 Titular Habitual</option>
+                          <option value="Rotación">🔄 Rotación</option>
+                          <option value="Promesa">💎 Promesa</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

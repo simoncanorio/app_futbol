@@ -1,9 +1,41 @@
-import { db, getInitialPlayerStats, isTransferWindowOpen, type Player } from '../db/db';
-import { simulateMatch } from './matchEngine';
+import { db, getInitialPlayerStats, getDetailedAttributes, isTransferWindowOpen, type Player } from '../db/db';
+import { simulateMatch, applyMatchOutcomeToDatabase } from './matchEngine';
 import { generateLeagueFixtures } from './fixtureGenerator';
 import { processAITransfers } from './aiTransfers';
 import { autoSelectLineupForTeam, checkLineupReady } from '../utils/lineupUtils';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
+import { calculatePlayerMarketValue, calculateExpectedAnnualWage } from './valuationEngine';
+import { sortStandingsWithTiebreakers, SECOND_DIVISION_CLUBS } from '../utils/standingsUtils';
+
+const REGEN_FIRST_NAMES: Record<string, string[]> = {
+  'España': ['Álvaro', 'Pablo', 'Alejandro', 'Pau', 'Marc', 'Iker', 'Unai', 'Dani', 'Hugo', 'Martín', 'Fermín', 'Gavi'],
+  'Argentina': ['Franco', 'Valentín', 'Enzo', 'Julián', 'Thiago', 'Lautaro', 'Mateo', 'Nicolás', 'Facundo', 'Santiago'],
+  'Brasil': ['Vitor', 'Gabriel', 'Endrick', 'Lucas', 'Matheus', 'João', 'Breno', 'Kauã', 'Estevão', 'Savinho'],
+  'Francia': ['Kylian', 'Warren', 'Rayan', 'Bradley', 'Mathys', 'Eduardo', 'Aurélien', 'Leny', 'Désiré', 'Lucas'],
+  'Inglaterra': ['Jude', 'Cole', 'Bukayo', 'Phil', 'Kobbie', 'Trent', 'Declan', 'Ollie', 'Morgan', 'Ethan'],
+  'Alemania': ['Florian', 'Jamal', 'Aleksandar', 'Maximilian', 'Kai', 'nico', 'Paul', 'Karim', 'Angelo', 'Tom'],
+  'Italia': ['Alessandro', 'Nicolò', 'Sandro', 'Giorgio', 'Francesco', 'Riccardo', 'Davide', 'Lorenzo', 'Matteo', 'Samuele'],
+  'Portugal': ['João', 'Gonçalo', 'Vitinha', 'Nuno', 'Rafael', 'Diogo', 'António', 'Rodrigo', 'Tiago', 'Francisco']
+};
+
+const REGEN_LAST_NAMES: Record<string, string[]> = {
+  'España': ['García', 'Martínez', 'López', 'Pedri', 'Cubarsí', 'Zubimendi', 'Baena', 'Williams', 'Olmo', 'Merino'],
+  'Argentina': ['Mastantuono', 'Echeverri', 'Álvarez', 'Fernández', 'Mac Allister', 'Romero', 'Paz', 'Garnacho', 'Barco', 'medina'],
+  'Brasil': ['Silva', 'Santos', 'Oliveira', 'Rodrigues', 'Roque', 'Guimarães', 'Paquetá', 'reis', 'Moscardo', ' Gomes'],
+  'Francia': ['Zaïre-Emery', 'Camavinga', 'Yoro', 'Barcola', 'Cherki', 'Doué', 'Tel', 'Tchouaméni', 'Saliba', 'Koundé'],
+  'Inglaterra': ['Palmer', 'Mainoo', 'Saka', 'Bellingham', 'Foden', 'Nwaneri', 'Wharton', 'Gordon', 'Branthwaite', 'Guehi'],
+  'Alemania': ['Wirtz', 'Musiala', 'Pavlović', 'Beier', 'Wanner', 'Schlotterbeck', 'Adeyemi', 'Stiller', 'Havertz', 'Bischof'],
+  'Italia': ['Bastoni', 'Barella', 'Calafiori', 'Scalvini', 'Camarda', 'Fagioli', 'Tonali', 'Ricci', 'Udogie', 'Buongiorno'],
+  'Portugal': ['Neves', 'Silva', 'Inácio', 'Ramos', 'Leão', 'Conceição', 'Mendes', 'Quenda', 'Mora', 'Dalot']
+};
+
+function generateRegenName(country: string): string {
+  const firstPool = REGEN_FIRST_NAMES[country] || REGEN_FIRST_NAMES['España'];
+  const lastPool = REGEN_LAST_NAMES[country] || REGEN_LAST_NAMES['España'];
+  const first = firstPool[Math.floor(Math.random() * firstPool.length)];
+  const last = lastPool[Math.floor(Math.random() * lastPool.length)];
+  return `${first} ${last.trim()}`;
+}
 
 export async function getLeagueMaxWeeks(leagueId: number) {
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
@@ -25,14 +57,6 @@ export async function advanceWeek(leagueId: number) {
   const league = await db.leagues.get(leagueId);
   if (!league) return;
 
-  // Enforce mandatory lineup: if user team lacks 11 starters, auto-select
-  if (league.userTeamId) {
-    const isReady = await checkLineupReady(league.userTeamId);
-    if (!isReady) {
-      await autoSelectLineupForTeam(league.userTeamId);
-    }
-  }
-
   const maxWeeks = await getLeagueMaxWeeks(leagueId);
 
   // If season finished, trigger startNextSeason
@@ -43,205 +67,252 @@ export async function advanceWeek(leagueId: number) {
 
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
 
-  // Check if fixtures exist for this league
-  let currentMatches = await db.matches
-    .where('leagueId')
-    .equals(leagueId)
-    .filter(m => m.week === league.currentWeek && !m.isPlayed)
-    .toArray();
-
-  if (currentMatches.length === 0) {
-    const totalMatchesCount = await db.matches.where('leagueId').equals(leagueId).count();
-    if (totalMatchesCount === 0) {
-      await generateLeagueFixtures(leagueId);
-      currentMatches = await db.matches
-        .where('leagueId')
-        .equals(leagueId)
-        .filter(m => m.week === league.currentWeek && !m.isPlayed)
-        .toArray();
+  // Ensure every team has a valid 11-player starting lineup before simulating
+  for (const t of allTeams) {
+    const isReady = await checkLineupReady(t.id!);
+    if (!isReady) {
+      await autoSelectLineupForTeam(t.id!);
     }
   }
 
-  const teamMap = new Map(allTeams.map(t => [t.id!, t]));
+  // Record players who are ALREADY suspended before this week's matches so they serve their 1-match ban now
+  const preMatchPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
+  const servingSuspensionIds = new Set<number>(
+    preMatchPlayers.filter(p => p.cards?.suspended && p.id).map(p => p.id!)
+  );
 
-  // Simulate scheduled matches for this matchday
-  for (const m of currentMatches) {
+  // Check if fixtures exist for this league
+  const totalMatchesCount = await db.matches.where('leagueId').equals(leagueId).count();
+  if (totalMatchesCount === 0) {
+    await generateLeagueFixtures(leagueId);
+  }
+
+  const weekMatches = await db.matches
+    .where('leagueId')
+    .equals(leagueId)
+    .filter(m => m.week === league.currentWeek)
+    .toArray();
+
+  const unplayedMatches = weekMatches.filter(m => !m.isPlayed);
+
+  // Reload fresh teams map after autoSelectLineupForTeam
+  const refreshedTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
+  const teamMap = new Map(refreshedTeams.map(t => [t.id!, t]));
+
+  // Simulate all unplayed scheduled matches for this matchday
+  for (const m of unplayedMatches) {
     const home = teamMap.get(m.homeTeamId);
     const away = teamMap.get(m.awayTeamId);
     if (!home || !away) continue;
 
     const simRes = await simulateMatch(leagueId, home, away, league.currentWeek, m.type || 'league');
-    
-    // Update match record
-    m.homeScore = simRes.homeScore;
-    m.awayScore = simRes.awayScore;
-    m.isPlayed = true;
-    m.events = simRes.events;
-    await db.matches.put(m);
-
-    // Update team stats
-    if (m.homeScore > m.awayScore) {
-      home.wins++; away.losses++;
-      home.hype = Math.min(100, (home.hype || 50) + 2);
-      away.hype = Math.max(0, (away.hype || 50) - 1);
-    } else if (m.awayScore > m.homeScore) {
-      away.wins++; home.losses++;
-      away.hype = Math.min(100, (away.hype || 50) + 2);
-      home.hype = Math.max(0, (home.hype || 50) - 1);
-    } else {
-      home.draws++; away.draws++;
-    }
-
-    home.goalsFor += m.homeScore; home.goalsAgainst += m.awayScore;
-    away.goalsFor += m.awayScore; away.goalsAgainst += m.homeScore;
-
-    // Financial revenue
-    const hypeMultiplier = ((home.hype || 50) / 50);
-    const actualAttendance = Math.min(home.population * 0.01, home.attendance * hypeMultiplier);
-    const weeklyRevenue = home.ticketPrice * actualAttendance;
-    home.revenue += weeklyRevenue;
-
-    const baseExpenses = (home.scoutingExpense || 100) * 10000 +
-                         (home.coachingExpense || 100) * 10000 +
-                         (home.healthExpense || 100) * 10000 +
-                         (home.facilitiesExpense || 100) * 10000;
-
-    const weeklyProfit = weeklyRevenue - baseExpenses;
-    home.profit += weeklyProfit;
-    home.budget += weeklyProfit;
+    await applyMatchOutcomeToDatabase(leagueId, m, simRes, home, away);
   }
 
-  // Board Confidence Logic for User Team
+  // Board Confidence Logic for User Team (evaluates the user's match from this week)
   if (league.userTeamId) {
     const userTeam = teamMap.get(league.userTeamId);
     if (userTeam) {
-       const m = currentMatches.find(cm => cm.homeTeamId === userTeam.id || cm.awayTeamId === userTeam.id);
-       if (m && m.isPlayed) {
-          const isHome = m.homeTeamId === userTeam.id;
-          const userScore = isHome ? m.homeScore : m.awayScore;
-          const oppScore = isHome ? m.awayScore : m.homeScore;
-          
-          if (userTeam.boardConfidence === undefined) userTeam.boardConfidence = 100;
-          
-          if (userScore > oppScore) {
-             userTeam.boardConfidence = Math.min(100, userTeam.boardConfidence + 5);
-          } else if (userScore < oppScore) {
-             userTeam.boardConfidence = Math.max(0, userTeam.boardConfidence - 10);
+      const m = weekMatches.find(cm => cm.homeTeamId === userTeam.id || cm.awayTeamId === userTeam.id);
+      if (m && m.isPlayed) {
+        const isHome = m.homeTeamId === userTeam.id;
+        const userScore = isHome ? m.homeScore : m.awayScore;
+        const oppScore = isHome ? m.awayScore : m.homeScore;
+
+        if (userTeam.boardConfidence === undefined) userTeam.boardConfidence = 100;
+
+        if (userScore > oppScore) {
+          userTeam.boardConfidence = Math.min(100, userTeam.boardConfidence + 4);
+        } else if (userScore < oppScore) {
+          userTeam.boardConfidence = Math.max(0, userTeam.boardConfidence - 8);
+        }
+        await db.teams.put(userTeam);
+
+        if (userTeam.boardConfidence <= 0) {
+          league.userTeamId = null;
+          await db.leagues.put(league);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('manager_fired'));
           }
-          
-          if (userTeam.boardConfidence <= 0) {
-             // FIRED
-             league.userTeamId = null;
-             await db.leagues.put(league);
-             // We can fire an event to let the UI know
-             window.dispatchEvent(new CustomEvent('manager_fired'));
-          }
-       }
+        }
+      }
     }
   }
 
-  // Update Player Fatigue, Morale, Training Effects & Injury Recovery
+  // Update Player Fatigue Recovery, Morale, Training Effects & Injury Recovery
   const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
   for (const p of allPlayers) {
     const pTeam = p.teamId ? teamMap.get(p.teamId) : null;
     const trainingFocus = pTeam?.trainingFocus || 'balance';
+    const trainingLevelBonus = ((pTeam?.facilities?.trainingLevel || 1) - 1) * 0.03;
 
     if (p.isInjured) {
-      // Better health expense recovers injuries faster
       const healthSpeed = (pTeam?.healthExpense || 50) > 75 ? 2 : 1;
       p.injuryWeeks = Math.max(0, (p.injuryWeeks || 1) - healthSpeed);
       if (p.injuryWeeks <= 0) {
         p.isInjured = false;
         p.injuryWeeks = 0;
+        p.injuryType = undefined;
       }
     }
 
-    // Training Regime Effects on Fatigue and Attributes
+    // Weekly Training Regime Effects on Fatigue and Attributes
     let extraFatigueRecovery = 0;
+    const growthProb = 0.14 + trainingLevelBonus;
+
     if (trainingFocus === 'recovery') {
-      extraFatigueRecovery = 25; // Massive rest session
+      extraFatigueRecovery = 24;
       p.morale = Math.min(100, (p.morale || 85) + 3);
     } else if (trainingFocus === 'physical') {
-      extraFatigueRecovery = -8; // Hard workout
-      if (p.attributes && Math.random() < 0.15) {
+      extraFatigueRecovery = -6;
+      if (p.attributes && Math.random() < growthProb) {
         p.attributes.physical = Math.min(99, p.attributes.physical + 1);
+        if (p.detailedAttributes) {
+          p.detailedAttributes.stamina = Math.min(99, p.detailedAttributes.stamina + 1);
+          p.detailedAttributes.strength = Math.min(99, p.detailedAttributes.strength + 1);
+        }
       }
     } else if (trainingFocus === 'attacking') {
-      if (p.attributes && ['DEL', 'MED'].includes(p.position) && Math.random() < 0.15) {
+      if (p.attributes && ['DEL', 'MED'].includes(p.position) && Math.random() < growthProb) {
         p.attributes.shooting = Math.min(99, p.attributes.shooting + 1);
+        if (p.detailedAttributes) {
+          p.detailedAttributes.finishing = Math.min(99, p.detailedAttributes.finishing + 1);
+          p.detailedAttributes.positioning = Math.min(99, p.detailedAttributes.positioning + 1);
+        }
       }
     } else if (trainingFocus === 'defending') {
-      if (p.attributes && ['DEF', 'POR'].includes(p.position) && Math.random() < 0.15) {
+      if (p.attributes && ['DEF', 'POR', 'MED'].includes(p.position) && Math.random() < growthProb) {
         p.attributes.defending = Math.min(99, p.attributes.defending + 1);
+        if (p.detailedAttributes) {
+          p.detailedAttributes.standingTackle = Math.min(99, p.detailedAttributes.standingTackle + 1);
+          p.detailedAttributes.defAwareness = Math.min(99, p.detailedAttributes.defAwareness + 1);
+        }
       }
     } else if (trainingFocus === 'technical') {
-      if (p.attributes && Math.random() < 0.15) {
+      if (p.attributes && Math.random() < growthProb) {
         p.attributes.passing = Math.min(99, p.attributes.passing + 1);
+        if (p.detailedAttributes) {
+          p.detailedAttributes.shortPassing = Math.min(99, p.detailedAttributes.shortPassing + 1);
+          p.detailedAttributes.vision = Math.min(99, p.detailedAttributes.vision + 1);
+        }
       }
     }
 
+    // Between-match natural recovery
     if (p.lineupStatus === 'starter') {
-      p.fatigue = Math.min(100, Math.max(0, (p.fatigue || 0) + 12 - extraFatigueRecovery));
-      p.morale = Math.min(100, (p.morale || 85) + 3);
+      p.fatigue = Math.min(100, Math.max(0, (p.fatigue || 0) - 8 - extraFatigueRecovery));
+      p.morale = Math.min(100, (p.morale || 85) + 2);
       if (p.morale >= 50) p.unhappy = false;
-      
-      // Injury risk if fatigue high & injuryProne
-      const baseRisk = (p.fatigue / 100) * 0.04 + ((p.injuryProne || 30) / 100) * 0.03;
-      if (Math.random() < baseRisk && !p.isInjured) {
-        p.isInjured = true;
-        p.injuryWeeks = Math.floor(Math.random() * 4) + 1;
-      }
     } else if (p.lineupStatus === 'bench') {
       p.fatigue = Math.max(0, (p.fatigue || 0) - 22 - extraFatigueRecovery);
-      p.morale = Math.max(10, (p.morale || 85) - 2);
+      p.morale = Math.max(15, (p.morale || 85) - 1);
     } else if (p.lineupStatus === 'youth') {
-      // Youth Academy player progression (every 4 weeks or high potential)
       p.fatigue = 0;
       p.morale = Math.min(100, (p.morale || 90) + 1);
       if (league.currentWeek % 4 === 0 && p.overall < p.potential) {
-        const youthBonus = (pTeam?.facilities?.youthLevel || 1) * 0.08;
+        const youthBonus = (pTeam?.facilities?.youthLevel || 1) * 0.08 + (p.mentorId ? 0.12 : 0);
         if (Math.random() < (0.35 + youthBonus)) {
           p.overall += 1;
           if (p.attributes) {
             p.attributes.shooting = Math.min(p.potential, p.attributes.shooting + 1);
             p.attributes.passing = Math.min(p.potential, p.attributes.passing + 1);
+            p.attributes.dribbling = Math.min(p.potential, p.attributes.dribbling + 1);
             p.attributes.defending = Math.min(p.potential, p.attributes.defending + 1);
           }
         }
       }
     } else {
       // Reserve
-      p.fatigue = Math.max(0, (p.fatigue || 0) - 25 - extraFatigueRecovery);
-      p.morale = Math.max(0, (p.morale || 85) - 4);
+      p.fatigue = Math.max(0, (p.fatigue || 0) - 28 - extraFatigueRecovery);
+      p.morale = Math.max(10, (p.morale || 85) - 3);
     }
 
     if ((p.morale || 85) < 35) {
       p.unhappy = true;
-      p.transferRequest = true; // Player demands to leave
+      p.transferRequest = true;
     }
 
-    if (p.cards?.suspended) {
-      p.cards.suspended = false; // Clear suspension after a week
+    // Clear 1-match suspension ONLY for players who already served it this week
+    if (p.id && servingSuspensionIds.has(p.id) && p.cards?.suspended) {
+      p.cards.suspended = false;
       p.cards.red = 0;
     }
+
+    // Playing Time vs Promised Squad Role Expectation Check (every 4 weeks starting Week 8)
+    if (league.currentWeek >= 8 && league.currentWeek % 4 === 0 && !p.isInjured && p.lineupStatus !== 'youth') {
+      const maxPossibleMins = Math.max(90, league.currentWeek * 90);
+      const playedRatio = (p.stats?.minutesPlayed || 0) / maxPossibleMins;
+      const role = p.squadRole || (p.overall >= 85 ? 'Estrella' : p.overall >= 79 ? 'Titular' : 'Rotación');
+      const expectedRatio = role === 'Estrella' ? 0.55 : role === 'Titular' ? 0.36 : role === 'Rotación' ? 0.14 : 0.04;
+
+      if (playedRatio < expectedRatio * 0.5) {
+        p.morale = Math.max(10, (p.morale || 75) - 9);
+        if (p.morale < 42) {
+          p.unhappy = true;
+          if (p.teamId === league.userTeamId && Math.random() < 0.35) {
+            await db.notes.add({
+              leagueId,
+              entityType: 'player',
+              entityId: p.id,
+              text: `😠 QUEJA DE VESTUARIO: ${p.name} (Rol: ${role}) exige más minutos en el once titular tras disputar solo ${p.stats?.minutesPlayed || 0} min esta temporada.`,
+              createdAt: Date.now()
+            });
+          }
+        }
+      }
+    }
   }
+
+  // International FIFA Break (Weeks 10, 20, 32)
+  if ([10, 20, 32].includes(league.currentWeek)) {
+    let userCalledUpCount = 0;
+    for (const p of allPlayers) {
+      if (p.overall >= 81 && !p.isInjured && p.lineupStatus !== 'youth') {
+        p.internationalCaps = (p.internationalCaps || 0) + 2;
+        if (['DEL', 'MED'].includes(p.position) && Math.random() < 0.35) {
+          p.internationalGoals = (p.internationalGoals || 0) + 1;
+        }
+        p.morale = Math.min(100, (p.morale || 80) + 4);
+        p.fatigue = Math.min(100, (p.fatigue || 0) + 8);
+        if (p.teamId === league.userTeamId) userCalledUpCount++;
+
+        // Small "Virus FIFA" minor injury risk (3%)
+        if (Math.random() < 0.03) {
+          p.isInjured = true;
+          p.injuryWeeks = 2;
+          p.injuryType = 'Sobrecarga en Selección Nacional (Virus FIFA)';
+        }
+      }
+    }
+    if (userCalledUpCount > 0) {
+      await db.notes.add({
+        leagueId,
+        entityType: 'general',
+        text: `🌍 PARÓN FIFA: ${userCalledUpCount} jugadores de tu plantilla fueron convocados por sus Selecciones Nacionales (+Moral y Prestigio Internacional).`,
+        createdAt: Date.now()
+      });
+    }
+  }
+
   await db.players.bulkPut(allPlayers);
 
-  // AI Club Transfers ONLY during open transfer windows (Task 11: Weeks 1-4, 19-22)
+  // AI Club Transfers ONLY during open transfer windows (Weeks 1-4, 19-22)
+  const currentTeamsList = Array.from(teamMap.values());
   if (isTransferWindowOpen(league.currentWeek)) {
-    await processAITransfers(league, allTeams);
+    await processAITransfers(league, currentTeamsList);
   }
 
-  // Process dynamic knockout progressions for Cup and Champions League
+  // Process dynamic knockout progressions for Cup, Champions League & Europa League
   await processKnockoutProgressions(leagueId, league.currentWeek);
 
   // Update team chemistry ratings
-  for (const t of allTeams) {
+  const latestTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
+  for (const t of latestTeams) {
     const tStarters = allPlayers.filter(p => p.teamId === t.id && p.lineupStatus === 'starter');
     t.teamChemistry = calculateTeamChemistry(tStarters, t).score;
   }
 
-  await db.teams.bulkPut(allTeams);
+  await db.teams.bulkPut(latestTeams);
   await db.leagues.update(leagueId, { currentWeek: league.currentWeek + 1, lastPlayedAt: Date.now() });
 }
 
@@ -254,11 +325,12 @@ async function processKnockoutProgressions(leagueId: number, currentWeek: number
       .toArray();
 
     if (cupMatches.length > 0) {
-      const winners: number[] = cupMatches.map(m => m.homeScore > m.awayScore ? m.homeTeamId : m.awayTeamId);
+      const winners: number[] = cupMatches.map(m => m.homeScore >= m.awayScore ? m.homeTeamId : m.awayTeamId);
       let nextWeek = 15;
       if (currentWeek === 15) nextWeek = 22;
       if (currentWeek === 22) nextWeek = 29;
-      if (currentWeek === 29) nextWeek = 36; // Final de Copa
+      if (currentWeek === 29) nextWeek = 36;
+      if (winners.length === 2) nextWeek = 36; // Jump directly to Final if only 2 winners remain
 
       const existingNextMatches = await db.matches
         .where('leagueId').equals(leagueId)
@@ -298,12 +370,14 @@ async function generateContinentalKnockouts(leagueId: number, currentWeek: numbe
       .filter(m => m.type === type && m.isPlayed)
       .toArray();
 
-    const teamPointsMap = new Map<number, { pts: number; gd: number }>();
+    const teamPointsMap = new Map<number, { pts: number; gd: number; gf: number }>();
     playedCL.forEach(m => {
-      const h = teamPointsMap.get(m.homeTeamId) || { pts: 0, gd: 0 };
-      const a = teamPointsMap.get(m.awayTeamId) || { pts: 0, gd: 0 };
+      const h = teamPointsMap.get(m.homeTeamId) || { pts: 0, gd: 0, gf: 0 };
+      const a = teamPointsMap.get(m.awayTeamId) || { pts: 0, gd: 0, gf: 0 };
       h.gd += (m.homeScore - m.awayScore);
       a.gd += (m.awayScore - m.homeScore);
+      h.gf += m.homeScore;
+      a.gf += m.awayScore;
       if (m.homeScore > m.awayScore) h.pts += 3;
       else if (m.awayScore > m.homeScore) a.pts += 3;
       else { h.pts += 1; a.pts += 1; }
@@ -312,28 +386,30 @@ async function generateContinentalKnockouts(leagueId: number, currentWeek: numbe
     });
 
     const sortedTeams = Array.from(teamPointsMap.entries())
-      .sort((a, b) => b[1].pts - a[1].pts || b[1].gd - a[1].gd)
+      .sort((a, b) => b[1].pts - a[1].pts || b[1].gd - a[1].gd || b[1].gf - a[1].gf)
       .map(entry => entry[0]);
 
-    const existingOctavos = await db.matches
+    const bracketSize = sortedTeams.length >= 16 ? 16 : sortedTeams.length >= 8 ? 8 : sortedTeams.length >= 4 ? 4 : 0;
+    const firstKnockoutWeek = bracketSize === 16 ? 31 : bracketSize === 8 ? 33 : 35;
+
+    const existingKnockouts = await db.matches
       .where('leagueId').equals(leagueId)
-      .filter(m => m.type === type && m.week === 31)
+      .filter(m => m.type === type && m.week === firstKnockoutWeek)
       .count();
 
-    if (existingOctavos === 0 && sortedTeams.length >= 4) {
-      const top16 = sortedTeams.slice(0, Math.min(16, sortedTeams.length));
+    if (existingKnockouts === 0 && bracketSize >= 4) {
+      const qualified = sortedTeams.slice(0, bracketSize);
       const nextFixtures: any[] = [];
-      const n = top16.length;
-      for (let i = 0; i < Math.floor(n / 2); i++) {
+      for (let i = 0; i < Math.floor(bracketSize / 2); i++) {
         nextFixtures.push({
           leagueId,
-          homeTeamId: top16[i],
-          awayTeamId: top16[n - 1 - i],
+          homeTeamId: qualified[i],
+          awayTeamId: qualified[bracketSize - 1 - i],
           homeScore: 0,
           awayScore: 0,
-          week: 31,
+          week: firstKnockoutWeek,
           isPlayed: false,
-          type: type,
+          type,
           events: []
         });
       }
@@ -346,10 +422,10 @@ async function generateContinentalKnockouts(leagueId: number, currentWeek: numbe
       .toArray();
 
     if (clMatches.length > 0) {
-      const winners: number[] = clMatches.map(m => m.homeScore > m.awayScore ? m.homeTeamId : m.awayTeamId);
+      const winners: number[] = clMatches.map(m => m.homeScore >= m.awayScore ? m.homeTeamId : m.awayTeamId);
       let nextWeek = 33;
       if (currentWeek === 33) nextWeek = 35;
-      if (currentWeek === 35) nextWeek = 38; // Final
+      if (currentWeek === 35 || winners.length === 2) nextWeek = 38; // Final
 
       const existingNextMatches = await db.matches
         .where('leagueId').equals(leagueId)
@@ -367,7 +443,7 @@ async function generateContinentalKnockouts(leagueId: number, currentWeek: numbe
             awayScore: 0,
             week: nextWeek,
             isPlayed: false,
-            type: type,
+            type,
             events: []
           });
         }
@@ -383,34 +459,27 @@ export async function startNextSeason(leagueId: number) {
 
   const allTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
 
-  // Find Trophy Winners for this season
-  // 1. Champions League Winner (Week 38 or latestPlayed continental)
+  // 1. Identify Official Trophy Winners
   const clFinalMatch = await db.matches
     .where('leagueId').equals(leagueId)
     .filter(m => m.type === 'continental' && m.isPlayed)
     .reverse()
     .first();
-  
+
   const championsLeagueWinnerId = clFinalMatch
-    ? (clFinalMatch.homeScore > clFinalMatch.awayScore ? clFinalMatch.homeTeamId : clFinalMatch.awayTeamId)
-    : allTeams.sort((a,b)=>b.overall-a.overall)[0]?.id;
+    ? (clFinalMatch.homeScore >= clFinalMatch.awayScore ? clFinalMatch.homeTeamId : clFinalMatch.awayTeamId)
+    : [...allTeams].sort((a, b) => b.overall - a.overall)[0]?.id;
 
-  const championsLeagueWinner = allTeams.find(t => t.id === championsLeagueWinnerId);
-
-  // 1b. Europa League Winner
   const elFinalMatch = await db.matches
     .where('leagueId').equals(leagueId)
     .filter(m => m.type === 'europa' && m.isPlayed)
     .reverse()
     .first();
-  
+
   const europaLeagueWinnerId = elFinalMatch
-    ? (elFinalMatch.homeScore > elFinalMatch.awayScore ? elFinalMatch.homeTeamId : elFinalMatch.awayTeamId)
+    ? (elFinalMatch.homeScore >= elFinalMatch.awayScore ? elFinalMatch.homeTeamId : elFinalMatch.awayTeamId)
     : undefined;
 
-  const europaLeagueWinner = allTeams.find(t => t.id === europaLeagueWinnerId);
-
-  // 2. Copa Winner (Week 36 or latestPlayed cup)
   const cupFinalMatch = await db.matches
     .where('leagueId').equals(leagueId)
     .filter(m => m.type === 'cup' && m.isPlayed)
@@ -418,12 +487,10 @@ export async function startNextSeason(leagueId: number) {
     .first();
 
   const cupWinnerId = cupFinalMatch
-    ? (cupFinalMatch.homeScore > cupFinalMatch.awayScore ? cupFinalMatch.homeTeamId : cupFinalMatch.awayTeamId)
-    : allTeams.sort((a,b)=>b.overall-a.overall)[1]?.id;
+    ? (cupFinalMatch.homeScore >= cupFinalMatch.awayScore ? cupFinalMatch.homeTeamId : cupFinalMatch.awayTeamId)
+    : [...allTeams].sort((a, b) => b.overall - a.overall)[1]?.id;
 
-  const cupWinner = allTeams.find(t => t.id === cupWinnerId);
-
-  // 3. Liga Champion (Top of domestic standings)
+  // 2. Domestic Standings, Prize Money & GM History
   const domMap: Record<string, typeof allTeams> = {};
   allTeams.forEach(t => {
     if (!domMap[t.domesticLeague]) domMap[t.domesticLeague] = [];
@@ -432,59 +499,26 @@ export async function startNextSeason(leagueId: number) {
 
   let leagueChampion: typeof allTeams[0] | undefined;
 
-  for (const leagueName in domMap) {
-    const sorted = domMap[leagueName].sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
-    if (!leagueChampion) leagueChampion = sorted[0];
+  const playedLeagueMatches = await db.matches
+    .where('leagueId')
+    .equals(leagueId)
+    .filter(m => m.type === 'league' && m.isPlayed)
+    .toArray();
 
-    sorted.forEach((t, rankIdx) => {
-      let prestige = t.prestige || 70;
-      if (rankIdx === 0) prestige = Math.min(100, prestige + 2); // Liga winner
-      if (t.id === championsLeagueWinnerId) prestige = Math.min(100, prestige + 5); // UCL winner
-      if (t.id === europaLeagueWinnerId) prestige = Math.min(100, prestige + 3); // UEL winner
-      if (t.id === cupWinnerId) prestige = Math.min(100, prestige + 3); // Cup winner
-      if (rankIdx >= sorted.length - 3) prestige = Math.max(20, prestige - 20); // Relegated
-
-      t.prestige = prestige;
-      t.wins = 0;
-      t.draws = 0;
-      t.losses = 0;
-      t.goalsFor = 0;
-      t.goalsAgainst = 0;
-      if (t.hype) t.hype = Math.floor((t.hype + 50) / 2);
-    });
-  }
-  await db.teams.bulkPut(allTeams);
-
-  // Save Season History entry
-  const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
-  const topScorer = [...allPlayers].sort((a,b)=>(b.stats?.goals||0)-(a.stats?.goals||0))[0];
-
-  await db.history.add({
-    leagueId,
-    season: league.season,
-    domesticLeague: leagueChampion?.domesticLeague || 'LaLiga',
-    championId: leagueChampion?.id || 1,
-    runnerUpId: domMap[leagueChampion?.domesticLeague || 'LaLiga']?.[1]?.id || 2,
-    mvpId: topScorer?.id || 1,
-    topScorerId: topScorer?.id || 1,
-    bestKeeperId: 1,
-    goldenBoyId: 1,
-    cupChampionId: cupWinnerId,
-    championsLeagueChampionId: championsLeagueWinnerId,
-    europaLeagueChampionId: europaLeagueWinnerId
-  } as any);
-
-  // Record GM History for user team
+  // Record GM History BEFORE resetting team stats!
   if (league.userTeamId) {
     const userTeam = allTeams.find(t => t.id === league.userTeamId);
     if (userTeam) {
-      const domTeams = allTeams.filter(t => t.domesticLeague === userTeam.domesticLeague);
-      domTeams.sort((a, b) => (b.wins * 3 + b.draws) - (a.wins * 3 + a.draws) || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
+      const domTeams = sortStandingsWithTiebreakers(
+        domMap[userTeam.domesticLeague] || allTeams,
+        playedLeagueMatches,
+        userTeam.domesticLeague
+      );
       const pos = domTeams.findIndex(t => t.id === userTeam.id) + 1;
-      
+
       const titlesWon = [];
       if (pos === 1) titlesWon.push(userTeam.domesticLeague);
-      if (userTeam.id === cupWinnerId) titlesWon.push('Copa del Rey / FA Cup');
+      if (userTeam.id === cupWinnerId) titlesWon.push('Copa Nacional');
       if (userTeam.id === championsLeagueWinnerId) titlesWon.push('UEFA Champions League');
       if (userTeam.id === europaLeagueWinnerId) titlesWon.push('UEFA Europa League');
 
@@ -504,28 +538,223 @@ export async function startNextSeason(leagueId: number) {
     }
   }
 
-  // 2. Dynamic Player Evolution & Contract Reduction
+  for (const leagueName in domMap) {
+    const sorted = sortStandingsWithTiebreakers(domMap[leagueName], playedLeagueMatches, leagueName);
+    if (!leagueChampion) leagueChampion = sorted[0];
+
+    // Real Promotions & Relegations for leagues with >= 14 teams
+    const secondDivPool = SECOND_DIVISION_CLUBS[leagueName] || [];
+    const existingNames = new Set(sorted.map(t => t.name.toLowerCase()));
+    const availablePromotions = secondDivPool.filter(c => !existingNames.has(c.name.toLowerCase()));
+    const relegatedNames: string[] = [];
+    const promotedNames: string[] = [];
+
+    if (sorted.length >= 14 && availablePromotions.length > 0) {
+      const bottomThree = sorted.slice(-3);
+      let promoIdx = 0;
+      for (const relTeam of bottomThree) {
+        // If AI team is in bottom 3, replace it with a promoted Second Division club!
+        if (relTeam.id !== league.userTeamId && promoIdx < availablePromotions.length) {
+          const nextClub = availablePromotions[promoIdx++];
+          relegatedNames.push(relTeam.name);
+          promotedNames.push(nextClub.name);
+          relTeam.name = nextClub.name;
+          relTeam.overall = nextClub.overall;
+          relTeam.budget = nextClub.budget;
+          relTeam.prestige = 62;
+          relTeam.kit = { primaryColor: nextClub.pri, secondaryColor: nextClub.sec, pattern: 'stripes' };
+        }
+      }
+      if (promotedNames.length > 0) {
+        await db.notes.add({
+          leagueId,
+          entityType: 'general',
+          text: `⬆️ ASCENSOS Y DESCENSOS (${leagueName}): Descienden a 2ª División: ${relegatedNames.join(', ')}. Ascienden a 1ª División: ${promotedNames.join(', ')}.`,
+          createdAt: Date.now()
+        });
+      }
+    }
+
+    sorted.forEach((t, rankIdx) => {
+      let prestige = t.prestige || 70;
+      // League finish prize money (€55M for 1st down to €12M for 20th)
+      const leaguePrize = Math.max(12_000_000, Math.round(55_000_000 - rankIdx * 2_200_000));
+      let trophyPrize = 0;
+
+      if (rankIdx === 0) prestige = Math.min(100, prestige + 3);
+      if (t.id === championsLeagueWinnerId) {
+        prestige = Math.min(100, prestige + 5);
+        trophyPrize += 50_000_000;
+      }
+      if (t.id === europaLeagueWinnerId) {
+        prestige = Math.min(100, prestige + 3);
+        trophyPrize += 20_000_000;
+      }
+      if (t.id === cupWinnerId) {
+        prestige = Math.min(100, prestige + 2);
+        trophyPrize += 12_000_000;
+      }
+      if (rankIdx >= sorted.length - 3) {
+        prestige = Math.max(25, prestige - 8);
+      }
+
+      // Sponsor Annual Payouts
+      const sponsorAnnualPayout =
+        (t.mainSponsor?.payoutPerSeason || 0) +
+        (t.sleeveSponsor?.payoutPerSeason || 0) +
+        (t.stadiumSponsor?.payoutPerSeason || 0) +
+        (t.digitalSponsor?.payoutPerSeason || 0);
+
+      t.budget = Math.max(10_000_000, (t.budget || 30_000_000) + leaguePrize + trophyPrize + sponsorAnnualPayout);
+      t.prestige = prestige;
+      t.wins = 0;
+      t.draws = 0;
+      t.losses = 0;
+      t.goalsFor = 0;
+      t.goalsAgainst = 0;
+      t.form = [];
+      if (t.hype) t.hype = Math.floor((t.hype + 55) / 2);
+    });
+  }
+  await db.teams.bulkPut(allTeams);
+
+  // 3. Calculate Season Awards (MVP, Pichichi, Best GK, Golden Boy U21)
+  const allPlayers = await db.players.where('leagueId').equals(leagueId).toArray();
+  const getMvpScore = (p: Player) =>
+    (p.stats?.goals || 0) * 3.2 +
+    (p.stats?.assists || 0) * 2.0 +
+    ((p.stats?.averageRating || 6.5) - 6.5) * 12 +
+    (p.teamId === championsLeagueWinnerId ? 8 : 0) +
+    (p.teamId === leagueChampion?.id ? 5 : 0) +
+    p.overall * 0.15;
+
+  const mvpWinner = [...allPlayers].sort((a, b) => getMvpScore(b) - getMvpScore(a))[0];
+  const topScorer = [...allPlayers].sort((a, b) => (b.stats?.goals || 0) - (a.stats?.goals || 0) || (b.stats?.assists || 0) - (a.stats?.assists || 0))[0];
+  const bestKeeper = [...allPlayers]
+    .filter(p => p.position === 'POR')
+    .sort((a, b) => ((b.stats?.cleanSheets || 0) * 3 + (b.stats?.saves || 0) * 0.15 + b.overall * 0.4) - ((a.stats?.cleanSheets || 0) * 3 + (a.stats?.saves || 0) * 0.15 + a.overall * 0.4))[0];
+  const goldenBoy = [...allPlayers]
+    .filter(p => p.age <= 21)
+    .sort((a, b) => getMvpScore(b) - getMvpScore(a))[0];
+
+  await db.history.add({
+    leagueId,
+    season: league.season,
+    domesticLeague: leagueChampion?.domesticLeague || 'LaLiga',
+    championId: leagueChampion?.id || 1,
+    runnerUpId: domMap[leagueChampion?.domesticLeague || 'LaLiga']?.[1]?.id || 2,
+    mvpId: mvpWinner?.id || topScorer?.id || 1,
+    topScorerId: topScorer?.id || 1,
+    bestKeeperId: bestKeeper?.id || 1,
+    goldenBoyId: goldenBoy?.id || 1,
+    cupChampionId: cupWinnerId,
+    championsLeagueChampionId: championsLeagueWinnerId,
+    europaLeagueChampionId: europaLeagueWinnerId
+  });
+
+  const teamLookup = new Map(allTeams.map(t => [t.id!, t]));
+
+  // 4. Dynamic Player Evolution, Attribute Scaling, Loan Returns & Contract Expiration
   for (const p of allPlayers) {
     if (p.stats) {
       if (!p.historicalStats) p.historicalStats = {};
       p.historicalStats[league.season] = { ...p.stats };
     }
 
-    p.age += 1;
     const gamesPlayed = p.stats?.gamesPlayed || 0;
+    const avgRating = p.stats?.averageRating || 6.7;
+    p.age += 1;
 
-    // Dynamic Growth Engine
-    if (p.age <= 23) {
-      const growth = gamesPlayed > 15 ? Math.floor(Math.random() * 4) + 2 : Math.floor(Math.random() * 2) + 1;
-      p.overall = Math.min(p.potential, p.overall + growth);
-    } else if (p.age >= 31) {
-      const decline = Math.floor(Math.random() * 3) + 1;
-      p.overall = Math.max(45, p.overall - decline);
-      p.potential = p.overall;
+    // Handle Loan Returns or Mandatory Buy Options
+    if (p.isOnLoan && p.loanedFromTeamId) {
+      const currentClub = p.teamId ? teamLookup.get(p.teamId) : undefined;
+      const parentClub = teamLookup.get(p.loanedFromTeamId);
+      const fee = p.buyOptionFee || calculatePlayerMarketValue(p);
+
+      if (currentClub && parentClub && (p.loanBuyObligation || (gamesPlayed >= 18 && avgRating >= 7.1 && currentClub.budget >= fee * 1.3))) {
+        // Exercise purchase option!
+        currentClub.budget -= fee;
+        parentClub.budget += fee;
+        p.isOnLoan = false;
+        p.loanedFromTeamId = undefined;
+        p.buyOptionFee = undefined;
+        p.loanBuyObligation = false;
+        p.contractYears = 4;
+        p.contractEndSeason = league.season + 5;
+      } else {
+        // Return to parent club
+        p.teamId = p.loanedFromTeamId;
+        p.isOnLoan = false;
+        p.loanedFromTeamId = undefined;
+        p.buyOptionFee = undefined;
+        p.loanBuyObligation = false;
+        p.lineupStatus = 'reserve';
+        p.pitchPosition = undefined;
+      }
+    }
+
+    // Calculate OVR growth / decline
+    let ovrDelta = 0;
+    const devType = p.developmentType || 'normal';
+    const formBonus = avgRating >= 7.3 && gamesPlayed >= 12 ? 1 : 0;
+
+    if (p.age <= 21) {
+      if (devType === 'bust' && Math.random() < 0.65) {
+        ovrDelta = 0;
+      } else {
+        const baseGrowth = gamesPlayed >= 14 ? 2 + Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 2);
+        ovrDelta = baseGrowth + (devType === 'early_bloomer' ? 1 : 0) + formBonus;
+      }
+    } else if (p.age <= 24) {
+      const baseGrowth = gamesPlayed >= 15 ? 1 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2);
+      ovrDelta = baseGrowth + (devType === 'late_bloomer' ? 1 : 0) + formBonus;
+    } else if (p.age <= 27) {
+      if (devType === 'late_bloomer' && p.overall < p.potential) {
+        ovrDelta = 1 + formBonus;
+      } else if (formBonus > 0 && p.overall < p.potential) {
+        ovrDelta = 1;
+      }
+    } else if (p.age >= 31 && p.age <= 33) {
+      ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 0 : 1));
+    } else if (p.age >= 34) {
+      ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 1 : 2));
+    }
+
+    const oldOvr = p.overall;
+    if (ovrDelta > 0) {
+      p.overall = Math.min(p.potential, p.overall + ovrDelta);
+    } else if (ovrDelta < 0) {
+      p.overall = Math.max(48, p.overall + ovrDelta);
+      p.potential = Math.max(p.overall, p.potential + ovrDelta);
+    }
+
+    const actualDelta = p.overall - oldOvr;
+    if (actualDelta !== 0) {
+      if (!p.attributes) {
+        p.attributes = { pace: p.overall, shooting: p.overall - 5, passing: p.overall - 2, dribbling: p.overall - 2, defending: p.overall - 10, physical: p.overall - 3 };
+      }
+      // Older players lose pace/physical faster than passing/shooting
+      const paceDelta = actualDelta < 0 && p.age >= 31 ? actualDelta - 1 : actualDelta;
+      const techDelta = actualDelta < 0 && p.age >= 31 ? Math.min(0, actualDelta + 1) : actualDelta;
+
+      p.attributes.pace = Math.max(30, Math.min(99, p.attributes.pace + paceDelta));
+      p.attributes.physical = Math.max(30, Math.min(99, p.attributes.physical + paceDelta));
+      p.attributes.shooting = Math.max(30, Math.min(99, p.attributes.shooting + techDelta));
+      p.attributes.passing = Math.max(30, Math.min(99, p.attributes.passing + techDelta));
+      p.attributes.dribbling = Math.max(30, Math.min(99, p.attributes.dribbling + actualDelta));
+      p.attributes.defending = Math.max(30, Math.min(99, p.attributes.defending + techDelta));
+
+      if (p.detailedAttributes) {
+        for (const k of Object.keys(p.detailedAttributes) as (keyof typeof p.detailedAttributes)[]) {
+          const d = (k === 'acceleration' || k === 'sprintSpeed' || k === 'stamina') ? paceDelta : techDelta;
+          p.detailedAttributes[k] = Math.max(15, Math.min(99, p.detailedAttributes[k] + d));
+        }
+      }
     }
 
     p.stats = getInitialPlayerStats();
     p.fatigue = 0;
+    p.cards = { yellow: 0, red: 0, suspended: false, seasonYellows: 0 };
 
     if (p.contractYears !== undefined && p.contractYears > 0) {
       p.contractYears -= 1;
@@ -536,44 +765,99 @@ export async function startNextSeason(leagueId: number) {
       }
     }
   }
-  
-  // Retirements & Regens
-  const playersToDelete = allPlayers.filter(p => p.age >= 36);
-  const remainingPlayers = allPlayers.filter(p => p.age < 36);
-  
-  // Generate Regens for each retired player
-  const newRegens: Player[] = playersToDelete.map(retired => ({
-    leagueId,
-    teamId: null,
-    name: `Regen de ${retired.name}`,
-    age: 16 + Math.floor(Math.random() * 3), // 16-18
-    overall: 55 + Math.floor(Math.random() * 15),
-    potential: 75 + Math.floor(Math.random() * 20),
-    position: retired.position,
-    specificPosition: retired.specificPosition,
-    contract: 5000,
-    stats: getInitialPlayerStats(),
-    developmentType: 'normal',
-    morale: 100,
-    fatigue: 0,
-    isInjured: false,
-    unhappy: false
-  }));
-  
+
+  // 5. Retirements & Authentic Regens
+  const playersToDelete = allPlayers.filter(p => p.age >= 37 || (p.age >= 35 && p.overall <= 68));
+  const remainingPlayers = allPlayers.filter(p => !playersToDelete.includes(p));
+
+  const devTypes: Player['developmentType'][] = ['early_bloomer', 'normal', 'normal', 'late_bloomer'];
+  const personalities: Player['personality'][] = ['Ambicioso', 'Leal', 'Pragmático', 'Avaricioso'];
+
+  const newRegens: Player[] = playersToDelete.map(retired => {
+    const country = retired.bio?.country || 'España';
+    const regenAge = 16 + Math.floor(Math.random() * 3); // 16-18
+    const regenOvr = 60 + Math.floor(Math.random() * 13); // 60-72
+    const minPot = Math.max(76, Math.min(94, retired.overall + 2));
+    const regenPot = Math.min(96, Math.max(minPot, 76 + Math.floor(Math.random() * 19)));
+    const pos = retired.position;
+    const specPos = retired.specificPosition || (pos === 'POR' ? 'POR' : pos === 'DEF' ? 'DFC' : pos === 'MED' ? 'MC' : 'DC');
+
+    const baseAttrs = {
+      pace: Math.min(92, regenOvr + (pos === 'DEL' ? 10 : pos === 'DEF' ? 4 : 6) + Math.floor(Math.random() * 6)),
+      shooting: Math.min(88, pos === 'DEL' ? regenOvr + 6 : pos === 'MED' ? regenOvr - 2 : regenOvr - 16),
+      passing: Math.min(88, pos === 'MED' ? regenOvr + 6 : regenOvr - 2),
+      dribbling: Math.min(90, pos === 'DEL' || pos === 'MED' ? regenOvr + 5 : regenOvr - 6),
+      defending: Math.min(88, pos === 'DEF' ? regenOvr + 7 : pos === 'MED' ? regenOvr - 5 : 35),
+      physical: Math.min(86, regenOvr + Math.floor(Math.random() * 6))
+    };
+
+    const tempPlayer: Partial<Player> = {
+      overall: regenOvr,
+      potential: regenPot,
+      age: regenAge,
+      position: pos,
+      specificPosition: specPos,
+      attributes: baseAttrs
+    };
+
+    return {
+      leagueId,
+      teamId: retired.teamId, // Spawns in the academy/reserves of the club where the legend retired (or FA if null)
+      name: generateRegenName(country),
+      age: regenAge,
+      overall: regenOvr,
+      potential: regenPot,
+      position: pos,
+      specificPosition: specPos,
+      secondaryPositions: retired.secondaryPositions,
+      contract: calculateExpectedAnnualWage(tempPlayer, 68),
+      contractYears: 4,
+      contractEndSeason: league.season + 5,
+      releaseClause: calculatePlayerMarketValue(tempPlayer) * 3,
+      lineupStatus: retired.teamId ? 'youth' : 'reserve',
+      stats: getInitialPlayerStats(),
+      attributes: baseAttrs,
+      detailedAttributes: getDetailedAttributes(tempPlayer),
+      playStyles: retired.playStyles ? retired.playStyles.slice(0, 2) : undefined,
+      bio: {
+        height: retired.bio?.height || (173 + Math.floor(Math.random() * 18)),
+        weight: retired.bio?.weight || (67 + Math.floor(Math.random() * 16)),
+        country,
+        preferredFoot: retired.bio?.preferredFoot || (Math.random() < 0.25 ? 'Left' : 'Right'),
+        weakFoot: retired.bio?.weakFoot || 3,
+        skillMoves: retired.bio?.skillMoves || 3
+      },
+      developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+      personality: personalities[Math.floor(Math.random() * personalities.length)],
+      morale: 95,
+      fatigue: 0,
+      isInjured: false,
+      unhappy: false
+    };
+  });
+
   if (playersToDelete.length > 0) {
-     await db.players.bulkDelete(playersToDelete.map(p => p.id!));
+    await db.players.bulkDelete(playersToDelete.map(p => p.id!));
   }
   if (newRegens.length > 0) {
-     await db.players.bulkAdd(newRegens);
+    await db.players.bulkAdd(newRegens);
   }
 
   await db.players.bulkPut(remainingPlayers);
+  await db.teams.bulkPut(allTeams);
 
-  // 3. Clear old matches and generate fresh 38-matchday schedule for new season
+  // Re-run lineup selection for all AI teams for the new season
+  for (const t of allTeams) {
+    if (t.id !== league.userTeamId) {
+      await autoSelectLineupForTeam(t.id!);
+    }
+  }
+
+  // 6. Clear old matches and generate fresh 38-matchday schedule for new season
   await db.matches.where('leagueId').equals(leagueId).delete();
   await generateLeagueFixtures(leagueId);
 
-  // 4. Update league season (+1 year) and reset currentWeek to 1
+  // 7. Update league season (+1 year) and reset currentWeek to 1
   await db.leagues.update(leagueId, {
     season: league.season + 1,
     currentWeek: 1,

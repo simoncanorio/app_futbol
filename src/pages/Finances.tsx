@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, type Team, type Player, formatMoney } from '../db/db';
+import { db, type Team, type Player } from '../db/db';
+import { calculateSquadFFPAmortization } from '../engine/valuationEngine';
 import { DollarSign, ShieldCheck, Award, HelpCircle, TrendingUp, TrendingDown, PieChart, Building } from 'lucide-react';
 
 export function Finances() {
@@ -252,6 +253,52 @@ export function Finances() {
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.5rem' }}>
               <span>Uso del presupuesto salarial: <strong>{wageUsagePct}%</strong></span>
               <span>{wageUsagePct <= 90 ? '✅ Fair Play Cumplido' : wageUsagePct <= 100 ? '⚠️ Al límite del tope' : '🚨 Infracción de Fair Play'}</span>
+            </div>
+
+            {/* FFP Amortization & Institutional Bank Loans */}
+            <div style={{ marginTop: '1rem', paddingTop: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '0.8rem', color: '#cbd5e1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Coste Plantilla FFP (Salarios + Amortización):</span>
+                <strong style={{ color: '#fbbf24' }}>{formatMoney(calculateSquadFFPAmortization(teamPlayers).totalSquadCostFFP)}/año</strong>
+              </div>
+              {team?.bankLoan && team.bankLoan.weeksRemaining > 0 ? (
+                <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '6px 10px', borderRadius: '6px', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>🏦 Préstamo Activo: <strong>{formatMoney(team.bankLoan.weeklyPayment)}/sem</strong> ({team.bankLoan.weeksRemaining} sem rest.)</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>🏦 Crédito Bancario (38 sem, 8% int.):</span>
+                  {[15000000, 35000000].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={async () => {
+                        if (!team) return;
+                        const totalRepay = Math.round(amt * 1.08);
+                        const weeklyPayment = Math.round(totalRepay / 38);
+                        const updated: Team = {
+                          ...team,
+                          budget: team.budget + amt,
+                          bankLoan: { principal: amt, weeklyPayment, weeksRemaining: 38 }
+                        };
+                        await db.teams.put(updated);
+                        setTeam(updated);
+                      }}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid #38bdf8',
+                        color: '#38bdf8',
+                        borderRadius: '5px',
+                        padding: '3px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Solicitar +{formatMoney(amt)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

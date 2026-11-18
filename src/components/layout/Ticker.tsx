@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { db, type Match, type Team } from '../../db/db';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { db } from '../../db/db';
 import './Ticker.css';
 
 interface TickerProps {
@@ -17,19 +18,24 @@ interface MatchDisplay {
 
 export function Ticker({ leagueId, season }: TickerProps) {
   const [matches, setMatches] = useState<MatchDisplay[]>([]);
+  const location = useLocation();
 
   useEffect(() => {
     async function loadLatestMatches() {
-      if(!leagueId) return;
-      // Get the latest matches for the ticker
+      if (!leagueId) return;
+      // Only fetch actually played matches for the ticker
       const latestMatches = await db.matches
         .where('leagueId')
         .equals(leagueId)
+        .filter(m => m.isPlayed === true)
         .reverse()
-        .limit(100)
+        .limit(24)
         .toArray();
 
-      if(latestMatches.length === 0) return;
+      if (latestMatches.length === 0) {
+        setMatches([]);
+        return;
+      }
 
       const teamIds = new Set<number>();
       latestMatches.forEach(m => {
@@ -42,8 +48,8 @@ export function Ticker({ leagueId, season }: TickerProps) {
 
       const displayData: MatchDisplay[] = latestMatches.map(m => ({
         id: m.id!,
-        home: teamMap.get(m.homeTeamId)?.substring(0,3).toUpperCase() || 'UNK',
-        away: teamMap.get(m.awayTeamId)?.substring(0,3).toUpperCase() || 'UNK',
+        home: teamMap.get(m.homeTeamId)?.substring(0, 3).toUpperCase() || 'LOC',
+        away: teamMap.get(m.awayTeamId)?.substring(0, 3).toUpperCase() || 'VIS',
         hScore: m.homeScore,
         aScore: m.awayScore
       }));
@@ -52,14 +58,11 @@ export function Ticker({ leagueId, season }: TickerProps) {
     }
 
     loadLatestMatches();
-    
-    // Set up an interval or a custom event to refresh the ticker.
-    // Since IndexedDB doesn't have live bindings here, we poll every 2 seconds if leagueId exists.
-    const interval = setInterval(loadLatestMatches, 2000);
+    const interval = setInterval(loadLatestMatches, 12000);
     return () => clearInterval(interval);
-  }, [leagueId, season]);
+  }, [leagueId, season, location.pathname]);
 
-  if(!leagueId || matches.length === 0) return null;
+  if (!leagueId || matches.length === 0) return null;
 
   return (
     <div className="ticker-wrapper">

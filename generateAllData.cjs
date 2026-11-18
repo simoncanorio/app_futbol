@@ -241,6 +241,41 @@ async function processAll() {
     const playerName = obj['Name'] || 'Desconocido';
     const nation = obj['Nation'] || 'España';
 
+    // Parse height (e.g. "182cm / 6'0\"") and weight (e.g. "75kg / 165lb")
+    const heightMatch = (obj['Height'] || '').match(/(\d+)\s*cm/i);
+    const weightMatch = (obj['Weight'] || '').match(/(\d+)\s*kg/i);
+    const height = heightMatch ? parseInt(heightMatch[1]) : 180;
+    const weight = weightMatch ? parseInt(weightMatch[1]) : 75;
+
+    const preferredFoot = (obj['Preferred foot'] || '').toLowerCase().includes('left') ? 'Left' : 'Right';
+    const weakFoot = Math.min(5, Math.max(1, parseInt(obj['Weak foot']) || 3));
+    const skillMoves = Math.min(5, Math.max(1, parseInt(obj['Skill moves']) || 3));
+
+    // Parse alternative positions e.g. "['LW', 'LM']"
+    const altPosRaw = obj['Alternative positions'] || '';
+    const secondaryPositions = [];
+    const altRegex = /'([^']+)'/g;
+    let altMatch;
+    while ((altMatch = altRegex.exec(altPosRaw)) !== null) {
+      secondaryPositions.push( mapSpecificPosition(altMatch[1]) );
+    }
+
+    // Parse PlayStyles e.g. "['Quick Step+', 'Finesse Shot']"
+    const psRaw = obj['play style'] || '';
+    const playStyles = [];
+    const psRegex = /'([^']+)'/g;
+    let psMatch;
+    while ((psMatch = psRegex.exec(psRaw)) !== null) {
+      playStyles.push(psMatch[1]);
+    }
+
+    const pac = parseInt(obj['PAC']) || 60;
+    const sho = parseInt(obj['SHO']) || 55;
+    const pas = parseInt(obj['PAS']) || 60;
+    const dri = parseInt(obj['DRI']) || 60;
+    const def = parseInt(obj['DEF']) || 55;
+    const phy = parseInt(obj['PHY']) || 60;
+
     const playerData = {
       name: playerName,
       age,
@@ -248,15 +283,57 @@ async function processAll() {
       potential: pot,
       position: pos,
       specificPosition: specPos,
+      secondaryPositions: secondaryPositions.length > 0 ? Array.from(new Set(secondaryPositions)) : undefined,
       marketValue: mv,
       country: nation,
+      height,
+      weight,
+      preferredFoot,
+      weakFoot,
+      skillMoves,
+      playStyles: playStyles.length > 0 ? playStyles : undefined,
       attributes: {
-        pace: parseInt(obj['PAC']) || 60,
-        shooting: parseInt(obj['SHO']) || 55,
-        passing: parseInt(obj['PAS']) || 60,
-        dribbling: parseInt(obj['DRI']) || 60,
-        defending: parseInt(obj['DEF']) || 55,
-        physical: parseInt(obj['PHY']) || 60
+        pace: pac,
+        shooting: sho,
+        passing: pas,
+        dribbling: dri,
+        defending: def,
+        physical: phy
+      },
+      detailedAttributes: {
+        acceleration: parseInt(obj['Acceleration']) || pac,
+        sprintSpeed: parseInt(obj['Sprint Speed']) || pac,
+        positioning: parseInt(obj['Positioning']) || sho,
+        finishing: parseInt(obj['Finishing']) || sho,
+        shotPower: parseInt(obj['Shot Power']) || sho,
+        longShots: parseInt(obj['Long Shots']) || sho,
+        volleys: parseInt(obj['Volleys']) || sho,
+        penalties: parseInt(obj['Penalties']) || sho,
+        vision: parseInt(obj['Vision']) || pas,
+        crossing: parseInt(obj['Crossing']) || pas,
+        freeKickAccuracy: parseInt(obj['Free Kick Accuracy']) || pas,
+        shortPassing: parseInt(obj['Short Passing']) || pas,
+        longPassing: parseInt(obj['Long Passing']) || pas,
+        curve: parseInt(obj['Curve']) || pas,
+        agility: parseInt(obj['Agility']) || dri,
+        balance: parseInt(obj['Balance']) || dri,
+        reactions: parseInt(obj['Reactions']) || ovr,
+        ballControl: parseInt(obj['Ball Control']) || dri,
+        composure: parseInt(obj['Composure']) || ovr,
+        interceptions: parseInt(obj['Interceptions']) || def,
+        headingAccuracy: parseInt(obj['Heading Accuracy']) || def,
+        defAwareness: parseInt(obj['Def Awareness']) || def,
+        standingTackle: parseInt(obj['Standing Tackle']) || def,
+        slidingTackle: parseInt(obj['Sliding Tackle']) || def,
+        jumping: parseInt(obj['Jumping']) || phy,
+        stamina: parseInt(obj['Stamina']) || phy,
+        strength: parseInt(obj['Strength']) || phy,
+        aggression: parseInt(obj['Aggression']) || phy,
+        gkDiving: parseInt(obj['GK Diving']) || (pos === 'POR' ? ovr : 15),
+        gkHandling: parseInt(obj['GK Handling']) || (pos === 'POR' ? ovr - 2 : 15),
+        gkKicking: parseInt(obj['GK Kicking']) || (pos === 'POR' ? ovr - 4 : 15),
+        gkPositioning: parseInt(obj['GK Positioning']) || (pos === 'POR' ? ovr : 15),
+        gkReflexes: parseInt(obj['GK Reflexes']) || (pos === 'POR' ? ovr + 1 : 15)
       }
     };
 
@@ -315,8 +392,15 @@ async function processAll() {
   potential: number;
   position: 'POR' | 'DEF' | 'MED' | 'DEL';
   specificPosition: 'POR' | 'DFC' | 'LI' | 'LD' | 'CAD' | 'CAI' | 'MCD' | 'MC' | 'MCO' | 'MI' | 'MD' | 'EI' | 'ED' | 'DC' | 'SD';
+  secondaryPositions?: string[];
   marketValue: number;
   country: string;
+  height?: number;
+  weight?: number;
+  preferredFoot?: 'Left' | 'Right';
+  weakFoot?: number;
+  skillMoves?: number;
+  playStyles?: string[];
   attributes: {
     pace: number;
     shooting: number;
@@ -324,6 +408,41 @@ async function processAll() {
     dribbling: number;
     defending: number;
     physical: number;
+  };
+  detailedAttributes?: {
+    acceleration: number;
+    sprintSpeed: number;
+    positioning: number;
+    finishing: number;
+    shotPower: number;
+    longShots: number;
+    volleys: number;
+    penalties: number;
+    vision: number;
+    crossing: number;
+    freeKickAccuracy: number;
+    shortPassing: number;
+    longPassing: number;
+    curve: number;
+    agility: number;
+    balance: number;
+    reactions: number;
+    ballControl: number;
+    composure: number;
+    interceptions: number;
+    headingAccuracy: number;
+    defAwareness: number;
+    standingTackle: number;
+    slidingTackle: number;
+    jumping: number;
+    stamina: number;
+    strength: number;
+    aggression: number;
+    gkDiving: number;
+    gkHandling: number;
+    gkKicking: number;
+    gkPositioning: number;
+    gkReflexes: number;
   };
 }
 

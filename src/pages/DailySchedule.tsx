@@ -100,17 +100,9 @@ export function DailySchedule() {
     }
   };
 
-  const handleFinishMatch = async (homeScore: number, awayScore: number, events: Match['events']) => {
-    if (!selectedMatch) return;
-
-    selectedMatch.homeScore = homeScore;
-    selectedMatch.awayScore = awayScore;
-    selectedMatch.isPlayed = true;
-    selectedMatch.events = events;
-
-    await db.matches.put(selectedMatch);
+  const handleFinishMatch = async (_homeScore: number, _awayScore: number, _events: Match['events']) => {
     setSelectedMatch(null);
-    loadData();
+    await loadData();
   };
 
   const handleSimulateWeek = async () => {
@@ -280,17 +272,57 @@ export function DailySchedule() {
               </div>
             </div>
 
+            {viewingPlayedSummary.stats && (
+              <div style={{ background: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{viewingPlayedSummary.stats.homePossession}%</strong>
+                  <span style={{ color: '#94a3b8' }}>Posesión</span>
+                  <strong>{viewingPlayedSummary.stats.awayPossession}%</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{viewingPlayedSummary.stats.homeXG.toFixed(2)}</strong>
+                  <span style={{ color: '#94a3b8' }}>Expected Goals (xG)</span>
+                  <strong>{viewingPlayedSummary.stats.awayXG.toFixed(2)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{viewingPlayedSummary.stats.homeShots} ({viewingPlayedSummary.stats.homeShotsOnTarget})</strong>
+                  <span style={{ color: '#94a3b8' }}>Tiros (A Puerta)</span>
+                  <strong>{viewingPlayedSummary.stats.awayShots} ({viewingPlayedSummary.stats.awayShotsOnTarget})</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{viewingPlayedSummary.stats.homeCorners}</strong>
+                  <span style={{ color: '#94a3b8' }}>Saques de Esquina</span>
+                  <strong>{viewingPlayedSummary.stats.awayCorners}</strong>
+                </div>
+                {viewingPlayedSummary.stats.mvpPlayerName && (
+                  <div style={{ textAlign: 'center', marginTop: '4px', color: '#fbbf24', fontWeight: 'bold' }}>
+                    ⭐ MVP del Partido: {viewingPlayedSummary.stats.mvpPlayerName}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="recap-events">
               <h4>Goles y Eventos Destacados</h4>
               {viewingPlayedSummary.events && viewingPlayedSummary.events.length > 0 ? (
                 viewingPlayedSummary.events.map((ev, idx) => (
                   <div key={idx} className="recap-event-item">
                     <span className="min">{ev.minute}'</span>
-                    <span>⚽ Gol anotado por jugador ID #{ev.playerId}</span>
+                    <span>
+                      {ev.description || (
+                        ev.type === 'goal'
+                          ? `⚽ Gol de ${ev.playerName || `Jugador #${ev.playerId}`}${ev.assistName ? ` (Asist: ${ev.assistName})` : ''}`
+                          : ev.type === 'yellow_card'
+                          ? `🟨 Amarilla para ${ev.playerName || `Jugador #${ev.playerId}`}`
+                          : ev.type === 'red_card'
+                          ? `🟥 Roja para ${ev.playerName || `Jugador #${ev.playerId}`}`
+                          : `Evento del partido`
+                      )}
+                    </span>
                   </div>
                 ))
               ) : (
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Partido disputado sin incidencias de gol registradas.</p>
+                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Partido disputado sin incidencias registradas.</p>
               )}
             </div>
 

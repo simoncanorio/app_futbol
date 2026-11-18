@@ -95,15 +95,8 @@ export function Dashboard() {
     setIsLivePlaying(true);
   };
 
-  const handleFinishLiveMatch = async (hScore: number, aScore: number, events: any) => {
+  const handleFinishLiveMatch = async (_hScore: number, _aScore: number, _events: any) => {
     if (!nextMatch || !league) return;
-    const m = nextMatch.match;
-    m.homeScore = hScore;
-    m.awayScore = aScore;
-    m.isPlayed = true;
-    m.events = events;
-    await db.matches.put(m);
-
     await advanceWeek(league.id!);
     window.location.reload();
   };

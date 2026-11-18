@@ -12,6 +12,8 @@ export function SeasonSummary() {
   const [league, setLeague] = useState<League | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [standings, setStandings] = useState<Team[]>([]);
+  const [clChampionName, setClChampionName] = useState<string>('');
+  const [cupChampionName, setCupChampionName] = useState<string>('');
   const [topScorer, setTopScorer] = useState<Player | null>(null);
   const [topAssister, setTopAssister] = useState<Player | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
@@ -26,6 +28,7 @@ export function SeasonSummary() {
       setLeague(l);
 
       const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
+      const teamMap = new Map(allTeams.map(t => [t.id!, t]));
       allTeams.sort((a, b) => {
         const ptsA = a.wins * 3 + a.draws;
         const ptsB = b.wins * 3 + b.draws;
@@ -38,6 +41,27 @@ export function SeasonSummary() {
       if (l.userTeamId) {
         const uTeam = allTeams.find(t => t.id === l.userTeamId);
         setUserTeam(uTeam || null);
+      }
+
+      // Fetch actual Champions League & Cup winners from played matches
+      const clMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'continental' && m.isPlayed).toArray();
+      if (clMatches.length > 0) {
+        clMatches.sort((a, b) => b.week - a.week);
+        const finalCl = clMatches[0];
+        const winId = finalCl.homeScore >= finalCl.awayScore ? finalCl.homeTeamId : finalCl.awayTeamId;
+        setClChampionName(teamMap.get(winId)?.name || allTeams[0]?.name || 'Real Madrid');
+      } else {
+        setClChampionName(allTeams[0]?.name || 'Real Madrid');
+      }
+
+      const cupMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'cup' && m.isPlayed).toArray();
+      if (cupMatches.length > 0) {
+        cupMatches.sort((a, b) => b.week - a.week);
+        const finalCup = cupMatches[0];
+        const winId = finalCup.homeScore >= finalCup.awayScore ? finalCup.homeTeamId : finalCup.awayTeamId;
+        setCupChampionName(teamMap.get(winId)?.name || allTeams[1]?.name || 'FC Barcelona');
+      } else {
+        setCupChampionName(allTeams[1]?.name || 'FC Barcelona');
       }
 
       // Fetch top scorer & assister across the league
@@ -151,7 +175,7 @@ export function SeasonSummary() {
           <div className="award-box blue" style={{ background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%)', border: '1px solid #38bdf8' }}>
             <Trophy size={32} color="#38bdf8" />
             <span className="award-title" style={{ color: '#38bdf8' }}>Campeón Champions League</span>
-            <strong>{standings[0]?.name || 'Real Madrid'}</strong>
+            <strong>{clChampionName}</strong>
             <small>Rey de Europa (+5 Prestigio)</small>
           </div>
 
@@ -159,7 +183,7 @@ export function SeasonSummary() {
           <div className="award-box green" style={{ background: 'linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%)', border: '1px solid #10b981' }}>
             <Trophy size={32} color="#10b981" />
             <span className="award-title" style={{ color: '#10b981' }}>Campeón Copa Nacional</span>
-            <strong>{standings[1]?.name || 'FC Barcelona'}</strong>
+            <strong>{cupChampionName}</strong>
             <small>Campeón de Copa (+3 Prestigio)</small>
           </div>
 
