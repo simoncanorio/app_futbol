@@ -47,6 +47,7 @@ export function Sidebar({ leagueId, isOpen }: SidebarProps) {
           <Link to={`/l/${leagueId}/transfermarkt`} className="nav-item" style={{color: '#38bdf8', fontWeight: 'bold'}}>🌐 Transfermarkt Live</Link>
           <Link to={`/l/${leagueId}/scouting`} className="nav-item">🕵️ Red de Ojeadores</Link>
           <Link to={`/l/${leagueId}/free_agents`} className="nav-item">Agentes Libres</Link>
+          <Link to={`/l/${leagueId}/draft`} className="nav-item">🌱 Promesas Libres (Draft)</Link>
           <Link to={`/l/${leagueId}/trades`} className="nav-item">Transferencias</Link>
           <Link to={`/l/${leagueId}/compare_players`} className="nav-item">Comparar Jugadores</Link>
           <Link to={`/l/${leagueId}/watch_list`} className="nav-item">Preselección</Link>

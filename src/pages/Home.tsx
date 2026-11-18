@@ -70,6 +70,7 @@ export function Home() {
           if (parsed.notes) await db.notes.bulkPut(parsed.notes);
           if (parsed.scoutMissions) await db.scoutMissions.bulkPut(parsed.scoutMissions);
           if (parsed.gmHistory) await db.gmHistory.bulkPut(parsed.gmHistory);
+          if (parsed.transferOffers) await db.transferOffers.bulkPut(parsed.transferOffers);
           await loadLeagues();
           alert('¡Partida importada con éxito!');
           return;
@@ -90,7 +91,7 @@ export function Home() {
   const confirmDelete = async () => {
     if (!deletingLeagueId) return;
     const id = deletingLeagueId;
-    await db.transaction('rw', [db.leagues, db.teams, db.players, db.matches, db.history, db.transactions, db.notes, db.scoutMissions, db.gmHistory], async () => {
+    await db.transaction('rw', [db.leagues, db.teams, db.players, db.matches, db.history, db.transactions, db.notes, db.scoutMissions, db.gmHistory, db.transferOffers], async () => {
       await db.leagues.delete(id);
       await db.teams.where('leagueId').equals(id).delete();
       await db.players.where('leagueId').equals(id).delete();
@@ -100,6 +101,7 @@ export function Home() {
       await db.notes.where('leagueId').equals(id).delete();
       await db.scoutMissions.where('leagueId').equals(id).delete();
       await db.gmHistory.where('leagueId').equals(id).delete();
+      await db.transferOffers.where('leagueId').equals(id).delete();
     });
     setDeletingLeagueId(null);
     await loadLeagues();
@@ -108,19 +110,19 @@ export function Home() {
   return (
     <div className="home-container">
       <div className="hero-cards">
-        <div className="card new-league-card" onClick={() => navigate('/new_league')}>
+        <div className="card new-league-card" onClick={() => navigate('/new_league?preset=procedural')}>
           <h2>New league</h2>
           <p>» Jugadores Ficticios</p>
         </div>
-        <div className="card new-league-card active-card" onClick={() => navigate('/new_league')}>
+        <div className="card new-league-card active-card" onClick={() => navigate('/new_league?preset=real')}>
           <h2>New league</h2>
           <p>» Jugadores Reales (EA FC & TM)</p>
         </div>
-        <div className="card new-league-card" onClick={() => navigate('/new_league')}>
+        <div className="card new-league-card" onClick={() => navigate('/new_league?preset=historical')}>
           <h2>New league</h2>
           <p>» Eras Históricas</p>
         </div>
-        <div className="card exhibition-card" onClick={() => navigate('/new_league')}>
+        <div className="card exhibition-card" onClick={() => navigate('/new_league?preset=quick')}>
           <h2>Partida Rápida</h2>
         </div>
       </div>

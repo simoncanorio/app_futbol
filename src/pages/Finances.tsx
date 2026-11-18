@@ -69,7 +69,7 @@ export function Finances() {
           setTicketPrice(userTeam.ticketPrice || 50);
 
           const players = await db.players.where('teamId').equals(userTeam.id!).toArray();
-          setTeamPlayers(players);
+          setTeamPlayers(players.filter(p => p.lineupStatus !== 'youth'));
         }
       }
     }
@@ -90,6 +90,19 @@ export function Finances() {
 
   const handleSelectSponsor = async (slot: 'shirt' | 'sleeve' | 'stadium' | 'digital', s: { name: string; payout: number; bonus: number }) => {
     if (!team) return;
+    // Prestige gate for top-tier commercial deals
+    const clubPrestige = team.prestige || 70;
+    const minPrestigeRequired = s.payout >= 42000000 ? 88 : s.payout >= 38000000 ? 80 : s.payout >= 29000000 ? 82 : 0;
+    if (clubPrestige < minPrestigeRequired) {
+      alert(`Reputación insuficiente: ${s.name} exige un Prestigio de Club mínimo de ${minPrestigeRequired} (tu club tiene ${clubPrestige}).`);
+      return;
+    }
+
+    const existingSponsor =
+      slot === 'shirt' ? team.mainSponsor :
+      slot === 'sleeve' ? team.sleeveSponsor :
+      slot === 'stadium' ? team.stadiumSponsor : team.digitalSponsor;
+
     const sponsorObj = {
       name: s.name,
       payoutPerSeason: s.payout,
@@ -101,10 +114,21 @@ export function Finances() {
     else if (slot === 'stadium') team.stadiumSponsor = sponsorObj;
     else if (slot === 'digital') team.digitalSponsor = sponsorObj;
 
-    team.budget += s.payout;
-    await db.teams.put(team);
-    setTeam({ ...team });
-    alert(`¡Acuerdo firmado con ${s.name}! Se han transferido ${formatMoney(s.payout)} directamente al presupuesto del club.`);
+    if (!existingSponsor) {
+      // First sponsor signed in this slot: grant signing advance (50% upfront, rest in season payout)
+      const advance = Math.round(s.payout * 0.5);
+      team.budget += advance;
+      await db.teams.put(team);
+      setTeam({ ...team });
+      alert(`¡Acuerdo firmado con ${s.name}! Se ha ingresado un adelanto de firma de ${formatMoney(advance)} al presupuesto del club (y ${formatMoney(s.payout)}/año al cierre de temporada).`);
+    } else {
+      // Replacing an existing sponsor in the same slot: charge 10% break fee instead of granting duplicate upfront cash
+      const breakFee = Math.round(existingSponsor.payoutPerSeason * 0.1);
+      team.budget = Math.max(0, team.budget - breakFee);
+      await db.teams.put(team);
+      setTeam({ ...team });
+      alert(`Has cambiado de patrocinador a ${s.name} (${formatMoney(s.payout)}/año). Se abonó una penalización de rescisión de ${formatMoney(breakFee)} al patrocinador saliente (${existingSponsor.name}).`);
+    }
   };
 
   const handleUpgradeFacility = async (type: 'stadium' | 'youth' | 'training' | 'medical') => {

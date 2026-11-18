@@ -6,7 +6,7 @@ import './Standings.css';
 
 export function Standings() {
   const { leagueId } = useParams();
-  const [, setLeague] = useState<League | null>(null);
+  const [league, setLeague] = useState<League | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [playedMatches, setPlayedMatches] = useState<Match[]>([]);
   const [selectedDomestic, setSelectedDomestic] = useState<string>('LaLiga');
@@ -69,14 +69,17 @@ export function Standings() {
         <table className="table-container bb-table standings-table">
           <thead>
             <tr>
+              <th>#</th>
               <th>Equipo</th>
-              <th>W</th>
+              <th>PJ</th>
+              <th>V</th>
+              <th>E</th>
               <th>D</th>
-              <th>L</th>
               <th>GF</th>
               <th>GC</th>
-              <th>GD</th>
-              <th>Pts</th>
+              <th>DG</th>
+              <th>PTS</th>
+              <th>Últimos 5</th>
             </tr>
           </thead>
           <tbody>
@@ -88,24 +91,58 @@ export function Standings() {
               else if (pos <= 6) { rowClass = 'europa-pos'; mark = 'e'; }
               else if (pos >= displayedTeams.length - 2) { rowClass = 'relegation-pos'; mark = 'r'; }
 
+              const isUserTeam = league && t.id === league.userTeamId;
+              const gp = t.wins + t.draws + t.losses;
               const pts = (t.wins * 3) + t.draws;
               const gd = t.goalsFor - t.goalsAgainst;
+              const recentForm = (t.form || []).slice(-5);
 
               return (
-                <tr key={t.id} className={rowClass}>
-                  <td>
-                     {pos} {mark && <span className="pos-mark">{mark}</span>}
-                     <Link to={`/l/${leagueId}/team/${t.id}`} className="team-name" style={{color: 'inherit', textDecoration: 'none', fontWeight: 'bold'}}>
-                       {t.name}
-                     </Link>
+                <tr key={t.id} className={rowClass} style={isUserTeam ? { background: 'rgba(56, 189, 248, 0.14)' } : undefined}>
+                  <td style={{ fontWeight: 'bold', width: '48px' }}>
+                    {pos} {mark && <span className="pos-mark">{mark}</span>}
                   </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <Link to={`/l/${leagueId}/team/${t.id}`} className="team-name" style={{color: isUserTeam ? '#38bdf8' : 'inherit', textDecoration: 'none', fontWeight: 'bold'}}>
+                        {t.name} {isUserTeam && <span style={{ fontSize: '0.7rem', color: '#38bdf8' }}>(Tú)</span>}
+                      </Link>
+                      {t.coach?.name && (
+                        <small style={{ color: '#64748b', fontSize: '0.72rem' }}>DT: {t.coach.name}</small>
+                      )}
+                    </div>
+                  </td>
+                  <td>{gp}</td>
                   <td>{t.wins}</td>
                   <td>{t.draws}</td>
                   <td>{t.losses}</td>
                   <td>{t.goalsFor}</td>
                   <td>{t.goalsAgainst}</td>
-                  <td>{gd > 0 ? `+${gd}` : gd}</td>
-                  <td style={{fontWeight: 'bold'}}>{pts}</td>
+                  <td style={{ color: gd > 0 ? '#10b981' : gd < 0 ? '#ef4444' : 'inherit', fontWeight: 600 }}>{gd > 0 ? `+${gd}` : gd}</td>
+                  <td style={{fontWeight: 'bold', color: '#fbbf24'}}>{pts}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                      {recentForm.length > 0 ? recentForm.map((f, fIdx) => (
+                        <span
+                          key={fIdx}
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.68rem',
+                            fontWeight: 'bold',
+                            background: f === 'W' ? '#10b981' : f === 'D' ? '#64748b' : '#ef4444',
+                            color: '#fff'
+                          }}
+                        >
+                          {f === 'W' ? 'V' : f === 'D' ? 'E' : 'D'}
+                        </span>
+                      )) : <span style={{ color: '#64748b', fontSize: '0.75rem' }}>-</span>}
+                    </div>
+                  </td>
                 </tr>
               );
             })}

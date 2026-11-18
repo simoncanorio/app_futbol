@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db, type Player, type Team } from '../db/db';
+import { db, type Player, type Team, getDetailedAttributes } from '../db/db';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import { Database, UserCheck, Shield, Save, Plus, Search, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import './DatabaseEditor.css';
@@ -53,9 +53,14 @@ export function DatabaseEditor({ currentLeagueId }: DatabaseEditorProps) {
   const handleSavePlayer = async () => {
     if (!selectedPlayer?.id) return;
     try {
-      await db.players.put(selectedPlayer);
-      setPlayers(prev => prev.map(p => p.id === selectedPlayer.id ? selectedPlayer : p));
-      showNotification(`¡Datos de ${selectedPlayer.name} actualizados en la base de datos!`);
+      const updated: Player = {
+        ...selectedPlayer,
+        detailedAttributes: getDetailedAttributes(selectedPlayer)
+      };
+      await db.players.put(updated);
+      setSelectedPlayer(updated);
+      setPlayers(prev => prev.map(p => p.id === updated.id ? updated : p));
+      showNotification(`¡Datos y 33 sub-atributos de ${updated.name} actualizados en la base de datos!`);
     } catch (err) {
       showNotification('Error al guardar jugador', 'error');
     }
@@ -120,6 +125,7 @@ export function DatabaseEditor({ currentLeagueId }: DatabaseEditorProps) {
       }
     };
 
+    newP.detailedAttributes = getDetailedAttributes(newP);
     const newId = await db.players.add(newP) as number;
     newP.id = newId;
     setPlayers(prev => [newP, ...prev]);

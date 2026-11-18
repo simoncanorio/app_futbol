@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createNewLeague, createRealLeagueFromTransfermarkt, getLeagueTeamNames } from '../db/generators';
 import { tmService } from '../services/transfermarkt';
 import { OFFLINE_CLUBS } from '../services/transfermarktData';
@@ -8,19 +8,22 @@ import './NewLeague.css';
 
 export function NewLeague() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'procedural' | 'transfermarkt'>('transfermarkt');
-  const [leagueName, setLeagueName] = useState('LaLiga EA Sports');
+  const [searchParams] = useSearchParams();
+  const preset = searchParams.get('preset');
+
+  const [mode, setMode] = useState<'procedural' | 'transfermarkt'>(preset === 'procedural' ? 'procedural' : 'transfermarkt');
+  const [leagueName, setLeagueName] = useState(preset === 'procedural' ? 'Liga Ficticia' : preset === 'quick' ? 'Superliga Mundial' : 'LaLiga EA Sports');
   const [difficulty, setDifficulty] = useState<'Normal' | 'Hard' | 'Insane'>('Normal');
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number>(0);
 
   // Transfermarkt & Era Selection
-  const [competitionId, setCompetitionId] = useState('ES1');
-  const [startYear, setStartYear] = useState<number>(2026);
-  const [customYearInput, setCustomYearInput] = useState('2026');
+  const [competitionId, setCompetitionId] = useState(preset === 'quick' ? 'WORLD' : 'ES1');
+  const [startYear, setStartYear] = useState<number>(preset === 'historical' ? 2014 : 2026);
+  const [customYearInput, setCustomYearInput] = useState(preset === 'historical' ? '2014' : '2026');
   const [availableClubs, setAvailableClubs] = useState<{ id: string; name: string }[]>([]);
 
   // Start Period Selection
-  const [startPeriod, setStartPeriod] = useState<'preseason' | 'winter_window' | 'final_stretch'>('preseason');
+  const [startPeriod, setStartPeriod] = useState<'preseason' | 'winter_window' | 'final_stretch'>(preset === 'quick' ? 'final_stretch' : 'preseason');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');

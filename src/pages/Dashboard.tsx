@@ -142,6 +142,7 @@ export function Dashboard() {
     const notes = await db.notes.where('leagueId').equals(lid).toArray();
     const scoutMissions = await db.scoutMissions.where('leagueId').equals(lid).toArray();
     const gmHistory = await db.gmHistory.where('leagueId').equals(lid).toArray();
+    const transferOffers = await db.transferOffers.where('leagueId').equals(lid).toArray();
 
     const saveData = {
       version: 1,
@@ -154,7 +155,8 @@ export function Dashboard() {
       transactions,
       notes,
       scoutMissions,
-      gmHistory
+      gmHistory,
+      transferOffers
     };
 
     const jsonStr = JSON.stringify(saveData, null, 2);
@@ -185,6 +187,7 @@ export function Dashboard() {
         if (saveData.notes) await db.notes.bulkPut(saveData.notes);
         if (saveData.scoutMissions) await db.scoutMissions.bulkPut(saveData.scoutMissions);
         if (saveData.gmHistory) await db.gmHistory.bulkPut(saveData.gmHistory);
+        if (saveData.transferOffers) await db.transferOffers.bulkPut(saveData.transferOffers);
 
         alert('¡Partida importada con éxito!');
         window.location.reload();

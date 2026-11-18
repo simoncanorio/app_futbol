@@ -19,6 +19,7 @@ export function LiveMatchEngine({
   homeTeam,
   awayTeam,
   homePlayers,
+  awayPlayers,
   onFinish,
   onClose
 }: LiveMatchEngineProps) {
@@ -26,12 +27,13 @@ export function LiveMatchEngine({
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState<number>(1);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isUserAway, setIsUserAway] = useState(false);
 
   const [homeScore, setHomeScore] = useState(0);
   const [awayScore, setAwayScore] = useState(0);
 
   const [homeTactic, setHomeTactic] = useState<string>(homeTeam.tacticalStyle || 'Tiki-Taka (Posesión)');
-  const [awayTactic] = useState<string>(awayTeam.tacticalStyle || 'Equilibrada');
+  const [awayTactic, setAwayTactic] = useState<string>(awayTeam.tacticalStyle || 'Equilibrada');
 
   const [visibleEvents, setVisibleEvents] = useState<MatchEvent[]>([]);
   const [ballPos, setBallPos] = useState<{ x: number; y: number; z: number }>({ x: 50, y: 50, z: 0 });
@@ -41,13 +43,19 @@ export function LiveMatchEngine({
   const [showSubModal, setShowSubModal] = useState(false);
   const [selectedStarter, setSelectedStarter] = useState<Player | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [localHomePlayers, setLocalHomePlayers] = useState<Player[]>(homePlayers);
+  const [localAwayPlayers, setLocalAwayPlayers] = useState<Player[]>(awayPlayers);
 
   // Store pre-computed deep engine result
   const simResultRef = useRef<(Match & { updatedPlayers?: Player[] }) | null>(null);
   const [fullStats, setFullStats] = useState<MatchTeamStats | null>(null);
 
-  const starters = homePlayers.filter(p => p.lineupStatus === 'starter' || !p.lineupStatus).slice(0, 11);
-  const bench = homePlayers.filter(p => p.lineupStatus === 'bench' || (!starters.includes(p) && p.lineupStatus !== 'youth'));
+  const controlledPlayers = isUserAway ? localAwayPlayers : localHomePlayers;
+  const controlledTeam = isUserAway ? awayTeam : homeTeam;
+  const controlledTactic = isUserAway ? awayTactic : homeTactic;
+
+  const starters = controlledPlayers.filter(p => p.lineupStatus === 'starter' || !p.lineupStatus).slice(0, 11);
+  const bench = controlledPlayers.filter(p => p.lineupStatus === 'bench' || (!starters.includes(p) && p.lineupStatus !== 'youth'));
 
   const playSynthSound = (type: 'whistle' | 'cheer' | 'kick' | 'post') => {
     if (!soundEnabled) return;
@@ -109,10 +117,15 @@ export function LiveMatchEngine({
     playSynthSound('whistle');
 
     async function initSimulation() {
+      const league = await db.leagues.get(match.leagueId);
+      if (mounted && league?.userTeamId && awayTeam.id === league.userTeamId) {
+        setIsUserAway(true);
+      }
+
       const res = await simulateMatch(
         match.leagueId,
         { ...homeTeam, tacticalStyle: homeTactic },
-        awayTeam,
+        { ...awayTeam, tacticalStyle: awayTactic },
         match.week,
         match.type || 'league',
         false // Do not persist until match finishes
@@ -129,6 +142,38 @@ export function LiveMatchEngine({
     initSimulation();
     return () => { mounted = false; };
   }, []);
+
+  // Dynamically re-simulate remaining minutes (minute+1 .. 90) when user adjusts tactics or substitutes mid-match
+  const resyncRemainingMatch = async (newHomeTactic: string, newAwayTactic: string) => {
+    if (minute >= 88 || !simResultRef.current) return;
+    const prevSim = simResultRef.current;
+    const freshSim = await simulateMatch(
+      match.leagueId,
+      { ...homeTeam, tacticalStyle: newHomeTactic },
+      { ...awayTeam, tacticalStyle: newAwayTactic },
+      match.week,
+      match.type || 'league',
+      false
+    );
+
+    const pastEvents = (prevSim.events || []).filter(e => e.minute <= minute);
+    const futureEvents = (freshSim.events || []).filter(e => e.minute > minute);
+    const mergedEvents = [...pastEvents, ...futureEvents].sort((a, b) => a.minute - b.minute);
+
+    const finalHGoals = mergedEvents.filter(e => e.type === 'goal' && e.teamId === homeTeam.id).length;
+    const finalAGoals = mergedEvents.filter(e => e.type === 'goal' && e.teamId === awayTeam.id).length;
+
+    simResultRef.current = {
+      ...freshSim,
+      homeScore: finalHGoals,
+      awayScore: finalAGoals,
+      events: mergedEvents
+    };
+    if (freshSim.stats) {
+      setFullStats(freshSim.stats);
+      setMomentum(freshSim.stats.homePossession);
+    }
+  };
 
   useEffect(() => {
     if (!isPlaying || minute >= 90) return;
@@ -229,22 +274,31 @@ export function LiveMatchEngine({
     await db.players.put(selectedStarter);
     await db.players.put(sub);
 
-    setVisibleEvents(evs => [
-      ...evs,
-      {
-        type: 'substitution',
-        playerId: sub.id!,
-        playerName: sub.name,
-        subOutId: selectedStarter.id!,
-        subOutName: selectedStarter.name,
-        teamId: homeTeam.id!,
-        minute: Math.max(1, minute),
-        description: `🔄 Cambio táctico: Entra ${sub.name} por ${selectedStarter.name}`
-      }
-    ]);
+    if (isUserAway) {
+      setLocalAwayPlayers(prev => prev.map(p => p.id === selectedStarter.id ? { ...selectedStarter } : p.id === sub.id ? { ...sub } : p));
+    } else {
+      setLocalHomePlayers(prev => prev.map(p => p.id === selectedStarter.id ? { ...selectedStarter } : p.id === sub.id ? { ...sub } : p));
+    }
+
+    const subEvent: MatchEvent = {
+      type: 'substitution',
+      playerId: sub.id!,
+      playerName: sub.name,
+      subOutId: selectedStarter.id!,
+      subOutName: selectedStarter.name,
+      teamId: controlledTeam.id!,
+      minute: Math.max(1, minute),
+      description: `🔄 Cambio táctico (${controlledTeam.name}): Entra ${sub.name} por ${selectedStarter.name}`
+    };
+
+    setVisibleEvents(evs => [...evs, subEvent]);
+    if (simResultRef.current) {
+      simResultRef.current.events = [...(simResultRef.current.events || []), subEvent];
+    }
 
     setSelectedStarter(null);
     setShowSubModal(false);
+    await resyncRemainingMatch(homeTactic, awayTactic);
   };
 
   const handleSaveAndFinish = async () => {
@@ -459,13 +513,22 @@ export function LiveMatchEngine({
           </div>
 
           <div className="tactic-selector">
-            <span>Ajuste Táctico:</span>
+            <span>Ajuste Táctico ({controlledTeam.name}):</span>
             <select
-              value={homeTactic}
+              value={controlledTactic}
               onChange={async e => {
-                setHomeTactic(e.target.value);
-                homeTeam.tacticalStyle = e.target.value;
-                await db.teams.put(homeTeam);
+                const newVal = e.target.value;
+                if (isUserAway) {
+                  setAwayTactic(newVal);
+                  awayTeam.tacticalStyle = newVal;
+                  await db.teams.put(awayTeam);
+                  await resyncRemainingMatch(homeTactic, newVal);
+                } else {
+                  setHomeTactic(newVal);
+                  homeTeam.tacticalStyle = newVal;
+                  await db.teams.put(homeTeam);
+                  await resyncRemainingMatch(newVal, awayTactic);
+                }
               }}
               className="bb-select"
             >
