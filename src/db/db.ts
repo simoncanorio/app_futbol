@@ -302,6 +302,18 @@ export interface Team {
     fans?: number;
     pepTalk?: number;
   };
+  coach?: {
+    name: string;
+    tacticalStyle: string;
+    formation: string;
+    reputation: number;
+  };
+  setPieceRoutine?: {
+    cornerStyle: 'primer_palo' | 'segundo_palo' | 'en_corto' | 'bloqueo_portero';
+    boxesPlayers: number; // 3 to 7 players attacking the box
+    freeKickStyle: 'directo_potencia' | 'colocado_barrera' | 'jugada_ensayada';
+  };
+  partnerships?: Record<string, number>; // "minId_maxId" -> shared games played together
 }
 
 export interface MatchEvent {

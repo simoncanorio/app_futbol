@@ -52,6 +52,9 @@ export function TopNavbar({ leagueId, onRefresh, onToggleSidebar }: TopNavbarPro
 
       for(let i=0; i<weeksToAdvance; i++){
         await advanceWeek(leagueId);
+        if (weeksToAdvance > 1) {
+          await new Promise(r => setTimeout(r, 0));
+        }
       }
       
       if (weeks === 'next_season') {

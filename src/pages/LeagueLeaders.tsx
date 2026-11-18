@@ -66,14 +66,47 @@ export function LeagueLeaders() {
           valueKey={p => p.stats?.goals || 0} 
         />
         <LeaderBoard 
+          title="Expected Goals (xG)" 
+          data={players.filter(p => (p.stats?.xG || 0) > 0)} 
+          valueKey={p => p.stats?.xG || 0}
+          isFloat
+        />
+        <LeaderBoard 
           title="Asistencias (Ast)" 
           data={players.filter(p => p.stats?.assists > 0)} 
           valueKey={p => p.stats?.assists || 0} 
         />
         <LeaderBoard 
+          title="Expected Assists (xA)" 
+          data={players.filter(p => (p.stats?.xA || 0) > 0)} 
+          valueKey={p => p.stats?.xA || 0}
+          isFloat
+        />
+        <LeaderBoard 
+          title="Nota Media (Rating)" 
+          data={players.filter(p => (p.stats?.gamesPlayed || 0) >= 2 && (p.stats?.averageRating || 0) > 0)} 
+          valueKey={p => p.stats?.averageRating || 0}
+          isFloat
+        />
+        <LeaderBoard 
+          title="Pases Clave (KP)" 
+          data={players.filter(p => (p.stats?.keyPasses || 0) > 0)} 
+          valueKey={p => p.stats?.keyPasses || 0} 
+        />
+        <LeaderBoard 
+          title="Recuperaciones (Tkl+Int)" 
+          data={players.filter(p => ((p.stats?.tackles || 0) + (p.stats?.interceptions || 0)) > 0)} 
+          valueKey={p => (p.stats?.tackles || 0) + (p.stats?.interceptions || 0)} 
+        />
+        <LeaderBoard 
           title="Vallas Invictas (CS)" 
           data={players.filter(p => p.position === 'POR' && p.stats?.cleanSheets)} 
           valueKey={p => p.stats?.cleanSheets || 0} 
+        />
+        <LeaderBoard 
+          title="Paradas de Portero (Saves)" 
+          data={players.filter(p => p.position === 'POR' && (p.stats?.saves || 0) > 0)} 
+          valueKey={p => p.stats?.saves || 0} 
         />
         <LeaderBoard 
           title="Mejor Valoración (OVR)" 

@@ -8,7 +8,7 @@ import {
   getDetailedAttributes,
   getSpecificPosition
 } from '../db/db';
-import { calculateTeamChemistry } from '../utils/chemistryUtils';
+import { calculateTeamChemistry, getPairKey } from '../utils/chemistryUtils';
 import { FORMATIONS, getPositionalPenalty, assignSpecialistsForSquad } from '../utils/lineupUtils';
 import { processTeamWeeklyFinances } from './valuationEngine';
 
@@ -772,35 +772,44 @@ export async function simulateMatch(
           if (Math.random() < 0.35) {
             if (isHomeAtk) matchStats.homeCorners++;
             else matchStats.awayCorners++;
-            // Immediate corner kick resolution!
+            // Immediate corner kick resolution using team's setPieceRoutine!
             const cornerTakerId = atkSheet.specialists.cornerTakerId;
             const cornerTakerEntry = atkActive.find(ap => ap.player.id === cornerTakerId) || atkEntry;
-            cornerTakerEntry.player.stats.crossesAttempted++;
+            const spRoutine = atkTeam.setPieceRoutine || { cornerStyle: 'primer_palo', boxesPlayers: 5, freeKickStyle: 'colocado_barrera' };
+            const isShortCorner = spRoutine.cornerStyle === 'en_corto' && Math.random() < 0.65;
+            if (!isShortCorner) cornerTakerEntry.player.stats.crossesAttempted++;
+
+            const boxMenBonus = ((spRoutine.boxesPlayers || 5) - 5) * 0.04;
+            const styleXGMod = spRoutine.cornerStyle === 'bloqueo_portero' || spRoutine.cornerStyle === 'segundo_palo' ? 0.03 : 0;
 
             const aerialTargets = atkActive.filter(ap => ap.slotType !== 'POR' && ap.player.id !== cornerTakerEntry.player.id);
-            if (aerialTargets.length > 0 && Math.random() < 0.32) {
-              cornerTakerEntry.player.stats.crossesCompleted++;
+            if (aerialTargets.length > 0 && Math.random() < (0.32 + boxMenBonus)) {
+              if (!isShortCorner) cornerTakerEntry.player.stats.crossesCompleted++;
               cornerTakerEntry.player.stats.keyPasses++;
-              cornerTakerEntry.player.stats.xA += 0.09;
+              cornerTakerEntry.player.stats.xA += 0.09 + styleXGMod;
               cornerTakerEntry.matchStats.keyPasses++;
-              cornerTakerEntry.matchStats.xA += 0.09;
+              cornerTakerEntry.matchStats.xA += 0.09 + styleXGMod;
 
               const headerTarget = pickWeightedPlayer(
                 aerialTargets,
                 aerialTargets.map(ap => {
                   const d = getDetailedAttributes(ap.player);
-                  return d.headingAccuracy * 0.5 + d.jumping * 0.5 + (ap.slotLabel === 'DFC' || ap.slotLabel === 'DC' ? 30 : 0);
+                  return isShortCorner
+                    ? d.finishing * 0.5 + d.ballControl * 0.5
+                    : d.headingAccuracy * 0.5 + d.jumping * 0.5 + (ap.slotLabel === 'DFC' || ap.slotLabel === 'DC' ? 30 : 0);
                 })
               );
 
-              headerTarget.player.stats.aerialDuelsWon++;
+              if (!isShortCorner) {
+                headerTarget.player.stats.aerialDuelsWon++;
+                defPlayer.stats.aerialDuelsLost++;
+              }
               headerTarget.player.stats.duelsWon++;
               headerTarget.matchStats.duelsWon++;
-              defPlayer.stats.aerialDuelsLost++;
               defPlayer.stats.duelsLost++;
               defEntry.matchStats.duelsLost++;
 
-              resolveShot(headerTarget, cornerTakerEntry, 'header', 0.11 + Math.random() * 0.12);
+              resolveShot(headerTarget, cornerTakerEntry, isShortCorner ? 'open_box' : 'header', 0.11 + styleXGMod + Math.random() * 0.12);
               return;
             } else {
               defPlayer.stats.clearances++;
@@ -808,6 +817,13 @@ export async function simulateMatch(
               defPlayer.stats.duelsWon++;
               defEntry.matchStats.clearances++;
               defEntry.matchStats.duelsWon++;
+              // If attacking team sent 6+ players into the box, clearance triggers a dangerous counter-attack!
+              if ((spRoutine.boxesPlayers || 5) >= 6) {
+                possessionIsHome = !isHomeAtk;
+                currentZone = 'final_third';
+                isCounterAttack = true;
+                return;
+              }
             }
           }
 
@@ -1512,11 +1528,27 @@ export async function applyMatchOutcomeToDatabase(
     homeTeam.hype = Math.max(10, (homeTeam.hype || 55) - 2);
   }
 
-  // 4. Process Weekly Finances for both clubs
+  // 4. Process Weekly Finances & Starter Partnerships for both clubs
   const [homePlayers, awayPlayers] = await Promise.all([
     db.players.where('teamId').equals(homeTeam.id!).toArray(),
     db.players.where('teamId').equals(awayTeam.id!).toArray()
   ]);
+
+  const updateStarterPartnerships = (t: Team, squad: Player[]) => {
+    const st = squad.filter(p => p.lineupStatus === 'starter' && p.id);
+    if (!t.partnerships) t.partnerships = {};
+    for (let i = 0; i < st.length; i++) {
+      for (let j = i + 1; j < st.length; j++) {
+        if (st[i].position === st[j].position || (st[i].position === 'MED' && st[j].position === 'DEL')) {
+          const k = getPairKey(st[i].id!, st[j].id!);
+          t.partnerships[k] = (t.partnerships[k] || 0) + 1;
+        }
+      }
+    }
+  };
+
+  updateStarterPartnerships(homeTeam, homePlayers);
+  updateStarterPartnerships(awayTeam, awayPlayers);
 
   processTeamWeeklyFinances(homeTeam, homePlayers, {
     isHome: true,

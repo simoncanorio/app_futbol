@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, type TransferOffer, formatMoney, isTransferWindowOpen } from '../db/db';
-import { calculateTransferAskingPrice, calculateExpectedAnnualWage } from '../engine/valuationEngine';
+import { calculateTransferAskingPrice, calculateExpectedAnnualWage, calculatePlayerMarketValue } from '../engine/valuationEngine';
 import { autoSelectLineupForTeam } from '../utils/lineupUtils';
 import { ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
@@ -31,6 +31,9 @@ export function Trades() {
   const [offerAmount, setOfferAmount] = useState(0);
   const [sellOnPercent, setSellOnPercent] = useState(10);
   const [buyOptionFee, setBuyOptionFee] = useState(0);
+  const [swapPlayerId, setSwapPlayerId] = useState<number | ''>('');
+  const [addonAmount, setAddonAmount] = useState<number>(0);
+  const [mySquad, setMySquad] = useState<Player[]>([]);
 
   // Step 2 Player contract terms
   const [playerWage, setPlayerWage] = useState(0);
@@ -41,6 +44,7 @@ export function Trades() {
 
   const loadTeamFinancials = async (lid: number, uTeamId: number) => {
     const myPlayers = await db.players.where('teamId').equals(uTeamId).toArray();
+    setMySquad(myPlayers.filter(p => p.lineupStatus !== 'youth').sort((a, b) => b.overall - a.overall));
     const totalWages = myPlayers.reduce((sum, p) => sum + (p.contract || 0), 0);
     setCurrentWageBill(totalWages);
 
@@ -190,6 +194,8 @@ export function Trades() {
     setTradeType('transfer');
     setOfferAmount(val.askingPrice);
     setSellOnPercent(10);
+    setSwapPlayerId('');
+    setAddonAmount(0);
     setBuyOptionFee(Math.round(val.marketValue * 1.1));
     setPlayerWage(Math.max(p.contract || expWage, expWage));
     setContractYears(3);
@@ -226,24 +232,31 @@ export function Trades() {
     let targetRequired = valuation.askingPrice;
     targetRequired -= (sellOnPercent * 0.01) * valuation.marketValue * 0.45;
 
+    const swapPlayer = swapPlayerId ? mySquad.find(x => x.id === Number(swapPlayerId)) : undefined;
+    const swapValue = swapPlayer ? calculatePlayerMarketValue(swapPlayer) : 0;
+    const effectiveTotalOffer = offerAmount + swapValue + Math.round(addonAmount * 0.75);
+
     if (tradeType === 'transfer') {
       if (offerAmount > userTeam.budget) {
-        setAiStatus({ status: 'rejected', msg: `¡Tu presupuesto de fichajes (${formatMoney(userTeam.budget)}) es insuficiente para cubrir la oferta de ${formatMoney(offerAmount)}!` });
+        setAiStatus({ status: 'rejected', msg: `¡Tu presupuesto de fichajes (${formatMoney(userTeam.budget)}) es insuficiente para cubrir el efectivo de ${formatMoney(offerAmount)}!` });
         return;
       }
 
-      if (offerAmount >= targetRequired) {
+      if (effectiveTotalOffer >= targetRequired) {
         setStep('player_contract');
-        setAiStatus({ status: 'accepted', msg: `¡Acuerdo alcanzado con el club${valuation.rivalryName ? ` pese a la tensión de ${valuation.rivalryName}` : ''}! Personalidad: ${negotiatingPlayer.personality || 'Pragmático'}. Ahora negocia las condiciones salariales.` });
-      } else if (offerAmount >= targetRequired * 0.8) {
-        const counter = Math.round(targetRequired);
+        setAiStatus({
+          status: 'accepted',
+          msg: `¡Acuerdo alcanzado con el club${swapPlayer ? ` incluyendo a ${swapPlayer.name} en el intercambio` : ''}${addonAmount > 0 ? ` + ${formatMoney(addonAmount)} en variables` : ''}! Ahora negocia el contrato personal.`
+        });
+      } else if (effectiveTotalOffer >= targetRequired * 0.8) {
+        const counter = Math.max(0, Math.round(targetRequired - swapValue - addonAmount * 0.75));
         setAiStatus({
           status: 'counter',
-          msg: `El club rival rechaza los ${formatMoney(offerAmount)} pero exige una contraoferta de ${formatMoney(counter)}.`,
+          msg: `El club rival valora tu paquete en ${formatMoney(effectiveTotalOffer)} pero exige subir el efectivo a ${formatMoney(counter)}.`,
           counterFee: counter
         });
       } else {
-        setAiStatus({ status: 'rejected', msg: `Oferta por el traspaso muy baja. Exigen al menos ${formatMoney(targetRequired)}.` });
+        setAiStatus({ status: 'rejected', msg: `Oferta global insuficiente (${formatMoney(effectiveTotalOffer)}). Exigen un paquete equivalente a ${formatMoney(targetRequired)}.` });
       }
     } else {
       if (buyOptionFee >= targetRequired * 0.85) {
@@ -294,12 +307,23 @@ export function Trades() {
 
     await db.players.put(negotiatingPlayer);
 
+    // Handle Player Swap if a player from user's squad was included in the deal
+    if (tradeType === 'transfer' && swapPlayerId && prevTeamId) {
+      const sp = await db.players.get(Number(swapPlayerId));
+      if (sp) {
+        sp.teamId = prevTeamId;
+        sp.lineupStatus = 'reserve';
+        sp.pitchPosition = undefined;
+        await db.players.put(sp);
+      }
+    }
+
     // Update buyer & seller budgets
     const newBudget = userTeam.budget - (upfrontFee + signingBonus);
     userTeam.budget = newBudget;
     await db.teams.put(userTeam);
     setUserTeam({ ...userTeam, budget: newBudget });
-    setCurrentWageBill(prev => prev + playerWage);
+    await loadTeamFinancials(league.id!, userTeam.id!);
 
     if (prevTeamId && upfrontFee > 0) {
       const sellerClub = await db.teams.get(prevTeamId);
@@ -687,6 +711,36 @@ export function Trades() {
                         <option value={10}>10%</option>
                         <option value={15}>15%</option>
                         <option value={20}>20%</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label>🔄 Incluir Jugador en Parte de Pago (Intercambio):</label>
+                      <select
+                        value={swapPlayerId}
+                        onChange={e => setSwapPlayerId(e.target.value ? Number(e.target.value) : '')}
+                        className="bb-select"
+                      >
+                        <option value="">-- Sin intercambio de jugador --</option>
+                        {mySquad.map(mp => (
+                          <option key={mp.id} value={mp.id}>
+                            {mp.name} ({mp.position}, OVR {mp.overall}) — Valor: {formatMoney(calculatePlayerMarketValue(mp))}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label>🎯 Variables por Objetivos (Goles / Clasificación Champions):</label>
+                      <select
+                        value={addonAmount}
+                        onChange={e => setAddonAmount(Number(e.target.value))}
+                        className="bb-select"
+                      >
+                        <option value={0}>Sin variables adicionales ($0)</option>
+                        <option value={5000000}>+$5.0M por objetivos cumplidos</option>
+                        <option value={10000000}>+$10.0M por objetivos cumplidos</option>
+                        <option value={20000000}>+$20.0M por objetivos y títulos</option>
                       </select>
                     </div>
                   </>

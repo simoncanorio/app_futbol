@@ -648,6 +648,84 @@ export function Tactics() {
             </div>
           </div>
 
+          {/* Set-Piece Routines (Pizarra de Balón Parado) */}
+          <h3 style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.25rem' }}>
+            🎯 Pizarra de Balón Parado (Córners y Faltas)
+          </h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            Configura las rutinas ofensivas en saques de esquina y cuántos jugadores suben a rematar (6-7 jugadores aumenta el peligro aéreo pero expone a contraataques).
+          </p>
+          <div className="roles-grid">
+            <div className="form-group">
+              <label>Rutina de Saque de Esquina:</label>
+              <select
+                value={team?.setPieceRoutine?.cornerStyle || 'primer_palo'}
+                onChange={e => {
+                  const cur = team?.setPieceRoutine || { cornerStyle: 'primer_palo', boxesPlayers: 5, freeKickStyle: 'colocado_barrera' };
+                  persistTeamPatch({ setPieceRoutine: { ...cur, cornerStyle: e.target.value as any } });
+                }}
+                className="bb-select"
+              >
+                <option value="primer_palo">Peinada al Primer Palo</option>
+                <option value="segundo_palo">Centro Cerrado al Segundo Palo (+xG Aéreo)</option>
+                <option value="en_corto">Córner en Corto y Pase Filtrado (Tiki-Taka)</option>
+                <option value="bloqueo_portero">Bloqueo en Área Chica al Portero</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Rematadores en el Área (Córner):</label>
+              <select
+                value={team?.setPieceRoutine?.boxesPlayers || 5}
+                onChange={e => {
+                  const cur = team?.setPieceRoutine || { cornerStyle: 'primer_palo', boxesPlayers: 5, freeKickStyle: 'colocado_barrera' };
+                  persistTeamPatch({ setPieceRoutine: { ...cur, boxesPlayers: Number(e.target.value) } });
+                }}
+                className="bb-select"
+              >
+                <option value={3}>3 Rematadores (Máxima Seguridad Tras Pérdida)</option>
+                <option value={4}>4 Rematadores (Prudente)</option>
+                <option value={5}>5 Rematadores (Equilibrado)</option>
+                <option value={6}>6 Rematadores (Ofensivo - Riesgo de Contra)</option>
+                <option value={7}>7 Rematadores (Asedio Total)</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Estilo de Tiro Libre Directo:</label>
+              <select
+                value={team?.setPieceRoutine?.freeKickStyle || 'colocado_barrera'}
+                onChange={e => {
+                  const cur = team?.setPieceRoutine || { cornerStyle: 'primer_palo', boxesPlayers: 5, freeKickStyle: 'colocado_barrera' };
+                  persistTeamPatch({ setPieceRoutine: { ...cur, freeKickStyle: e.target.value as any } });
+                }}
+                className="bb-select"
+              >
+                <option value="colocado_barrera">Rosca Colocada sobre la Barrera</option>
+                <option value="directo_potencia">Cañonazo de Potencia (Knuckleball)</option>
+                <option value="jugada_ensayada">Jugada de Laboratorio (Pase Oculto)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Active Tactical Partnerships */}
+          {chemResult.activePartnerships.length > 0 && (
+            <div style={{ marginTop: '1.75rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.25rem' }}>
+              <h3 style={{ margin: '0 0 0.6rem 0', color: '#38bdf8' }}>🔗 Sociedades Tácticas en Campo (+{chemResult.details.partnershipBonus} Química)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                {chemResult.activePartnerships.map((ap, idx) => (
+                  <div key={idx} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '0.75rem', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#38bdf8', textTransform: 'uppercase', fontWeight: 'bold' }}>{ap.zoneName}</div>
+                    <div style={{ fontWeight: 'bold', color: '#f8fafc', marginTop: '2px' }}>{ap.player1Name} & {ap.player2Name}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#10b981', marginTop: '2px' }}>
+                      ⚡ +{ap.synergyBonus} Sinergia ({ap.matchesTogether} partidos juntos)
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <h3 style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.25rem' }}>
             Roles Tácticos Individuales (Once Titular)
           </h3>

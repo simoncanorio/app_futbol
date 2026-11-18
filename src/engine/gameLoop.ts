@@ -305,8 +305,11 @@ export async function advanceWeek(leagueId: number) {
   // Process dynamic knockout progressions for Cup, Champions League & Europa League
   await processKnockoutProgressions(leagueId, league.currentWeek);
 
-  // Update team chemistry ratings
+  // Update team chemistry ratings & AI Manager Carousel (Weeks 14, 22, 30)
   const latestTeams = await db.teams.where('leagueId').equals(leagueId).toArray();
+  if ([14, 22, 30].includes(league.currentWeek)) {
+    await processManagerCarousel(leagueId, league.currentWeek, latestTeams, league.userTeamId);
+  }
   for (const t of latestTeams) {
     const tStarters = allPlayers.filter(p => p.teamId === t.id && p.lineupStatus === 'starter');
     t.teamChemistry = calculateTeamChemistry(tStarters, t).score;
@@ -314,6 +317,52 @@ export async function advanceWeek(leagueId: number) {
 
   await db.teams.bulkPut(latestTeams);
   await db.leagues.update(leagueId, { currentWeek: league.currentWeek + 1, lastPlayedAt: Date.now() });
+}
+
+const FREE_AGENT_COACHES = [
+  { name: 'Zinedine Zidane', tacticalStyle: 'Contraataque Veloz', formation: '4-3-3', reputation: 95 },
+  { name: 'Jürgen Klopp', tacticalStyle: 'Gegenpressing (Presión Alta)', formation: '4-3-3', reputation: 96 },
+  { name: 'Thomas Tuchel', tacticalStyle: 'Juego de Posición (Juego de Autor)', formation: '3-5-2', reputation: 89 },
+  { name: 'Xavi Hernández', tacticalStyle: 'Tiki-Taka (Posesión)', formation: '4-3-3', reputation: 85 },
+  { name: 'Massimiliano Allegri', tacticalStyle: 'Bloque Bajo y Presión Zonal', formation: '4-4-2', reputation: 87 },
+  { name: 'Mauricio Pochettino', tacticalStyle: 'Gegenpressing (Presión Alta)', formation: '4-2-3-1', reputation: 84 },
+  { name: 'José Mourinho', tacticalStyle: 'Bloque Bajo y Presión Zonal', formation: '4-2-3-1', reputation: 90 },
+  { name: 'Julian Nagelsmann', tacticalStyle: 'Gegenpressing (Presión Alta)', formation: '4-2-3-1', reputation: 88 }
+];
+
+async function processManagerCarousel(
+  leagueId: number,
+  currentWeek: number,
+  teams: any[],
+  userTeamId: number | null
+) {
+  let sackingsThisWeek = 0;
+  for (const t of teams) {
+    if (t.id === userTeamId) continue;
+    if ((t.prestige || 70) < 74) continue;
+    const gp = t.wins + t.draws + t.losses;
+    if (gp < 10) continue;
+    const winRate = t.wins / gp;
+    if (winRate < 0.30 && sackingsThisWeek < 2) {
+      const oldCoach = t.coach?.name || 'su entrenador';
+      const replacement = FREE_AGENT_COACHES[(t.id + currentWeek) % FREE_AGENT_COACHES.length];
+      if (replacement.name === oldCoach) continue;
+
+      t.coach = { ...replacement };
+      t.formation = replacement.formation;
+      t.tacticalStyle = replacement.tacticalStyle;
+      await autoSelectLineupForTeam(t.id, replacement.formation);
+      sackingsThisWeek++;
+
+      await db.notes.add({
+        leagueId,
+        entityType: 'team',
+        entityId: t.id,
+        text: `👔 DESTITUCIÓN EN EL BANQUILLO: ${t.name} destituye a ${oldCoach} tras un mal arranque (${t.wins}V-${t.draws}E-${t.losses}D) y anuncia a ${replacement.name} (${replacement.formation} · ${replacement.tacticalStyle}).`,
+        createdAt: Date.now()
+      });
+    }
+  }
 }
 
 async function processKnockoutProgressions(leagueId: number, currentWeek: number) {

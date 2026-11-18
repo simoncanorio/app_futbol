@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type League, type Team, type Player, type GMHistoryEntry } from '../db/db';
-import { Trophy, Award, Calendar, Shield, User } from 'lucide-react';
+import { db, type League, type Team, type Player, type GMHistoryEntry, formatMoney } from '../db/db';
+import { Trophy, Award, Calendar, Shield, User, Briefcase } from 'lucide-react';
 
 export function GMHistory() {
   const { leagueId } = useParams();
@@ -9,6 +9,7 @@ export function GMHistory() {
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
   const [gmEntries, setGmEntries] = useState<GMHistoryEntry[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [jobOffers, setJobOffers] = useState<Team[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -17,9 +18,10 @@ export function GMHistory() {
       if(!l) return;
       setLeague(l);
       
+      const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
       if(l.userTeamId) {
-        const uTeam = await db.teams.get(l.userTeamId);
-        setCurrentTeam(uTeam || null);
+        const uTeam = allTeams.find(t => t.id === l.userTeamId) || null;
+        setCurrentTeam(uTeam);
         
         // Fetch saved past season records
         const records = await db.gmHistory.where('leagueId').equals(lid).toArray();
@@ -28,10 +30,59 @@ export function GMHistory() {
         // Managed players
         const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
         setPlayers(p.sort((a,b) => b.overall - a.overall));
+
+        // Calculate realistic job offers based on managerReputation & club performance
+        const userRep = l.managerReputation || 60;
+        const candidates = allTeams
+          .filter(t => t.id !== l.userTeamId && (t.prestige || 70) <= userRep + 18)
+          .sort((a, b) => {
+            const aGp = Math.max(1, a.wins + a.draws + a.losses);
+            const bGp = Math.max(1, b.wins + b.draws + b.losses);
+            const aWinRate = a.wins / aGp;
+            const bWinRate = b.wins / bGp;
+            return (aWinRate - bWinRate) || ((b.prestige || 70) - (a.prestige || 70));
+          })
+          .slice(0, 3);
+        setJobOffers(candidates);
       }
     }
     load();
   }, [leagueId]);
+
+  const handleAcceptJobOffer = async (targetTeam: Team) => {
+    if (!league || !currentTeam) return;
+    if (!window.confirm(`¿Estás seguro de dimitir de ${currentTeam.name} y firmar como nuevo entrenador de ${targetTeam.name}?`)) return;
+
+    // Save current club stint to gmHistory if at least 1 match played
+    const matchesPlayed = currentTeam.wins + currentTeam.draws + currentTeam.losses;
+    if (matchesPlayed > 0) {
+      await db.gmHistory.add({
+        season: league.season,
+        leagueId: league.id!,
+        teamId: currentTeam.id!,
+        teamName: currentTeam.name,
+        wins: currentTeam.wins,
+        draws: currentTeam.draws,
+        losses: currentTeam.losses,
+        goalsFor: currentTeam.goalsFor,
+        goalsAgainst: currentTeam.goalsAgainst
+      });
+    }
+
+    targetTeam.boardConfidence = 90;
+    await db.teams.put(targetTeam);
+    await db.leagues.update(league.id!, { userTeamId: targetTeam.id! });
+
+    await db.notes.add({
+      leagueId: league.id!,
+      entityType: 'team',
+      entityId: targetTeam.id,
+      text: `✍️ CAMBIO DE BANQUILLO: Has dejado ${currentTeam.name} para asumir la dirección técnica de ${targetTeam.name}.`,
+      createdAt: Date.now()
+    });
+
+    window.location.reload();
+  };
 
   if (!league || !currentTeam) return <div className="page-container">Cargando datos de Manager...</div>;
 
@@ -191,6 +242,45 @@ export function GMHistory() {
               <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Aún no has levantado trofeos oficiales. ¡Sigue compitiendo!</p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Job Offers / Coaching Market */}
+      <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            <Briefcase size={18} color="#38bdf8" /> Mercado de Banquillos & Ofertas de Trabajo
+          </h3>
+          <span style={{ fontSize: '0.8rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold' }}>
+            Reputación de Mánager: {league.managerReputation || 60}/100
+          </span>
+        </div>
+        <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
+          Clubes interesados en tus servicios según tu reputación actual ({league.managerReputation || 60}). Cambiar de club registrará tu etapa actual en el historial.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+          {jobOffers.map(offer => (
+            <div key={offer.id} style={{ background: 'rgba(15, 23, 42, 0.65)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '1rem', color: '#f8fafc' }}>{offer.name}</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold' }}>OVR {offer.overall} · Prest. {offer.prestige || 75}</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.3rem' }}>
+                  Récord actual: {offer.wins}V - {offer.draws}E - {offer.losses}D | Entrenador: {offer.coach?.name || 'Interino'}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '0.2rem', fontWeight: 'bold' }}>
+                  Presupuesto de Fichajes: {formatMoney(offer.budget)}
+                </div>
+              </div>
+              <button
+                onClick={() => handleAcceptJobOffer(offer)}
+                style={{ width: '100%', padding: '0.5rem', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.82rem' }}
+              >
+                ✍️ Firmar Contrato con {offer.name}
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 

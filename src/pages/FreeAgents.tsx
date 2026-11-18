@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type League, type Team, formatMoney } from '../db/db';
 import { DollarSign, CheckCircle2, XCircle, FileText } from 'lucide-react';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
+import { calculateExpectedAnnualWage } from '../engine/valuationEngine';
 
 export function FreeAgents() {
   const { leagueId } = useParams();
@@ -19,7 +20,7 @@ export function FreeAgents() {
   const [signingBonus, setSigningBonus] = useState(0);
   const [statusMsg, setStatusMsg] = useState<{ type: 'accepted' | 'rejected' | 'idle'; msg: string }>({ type: 'idle', msg: '' });
 
-  const MAX_ROSTER = 25;
+  const MAX_ROSTER = 28;
 
   useEffect(() => {
     async function load() {
@@ -33,13 +34,14 @@ export function FreeAgents() {
         setTeam(userTeam || null);
         
         const teamRoster = await db.players.where('teamId').equals(l.userTeamId).toArray();
-        setTeamPlayersCount(teamRoster.length);
-        const payroll = teamRoster.reduce((sum, p) => sum + p.contract, 0);
+        const seniorRoster = teamRoster.filter(p => p.lineupStatus !== 'youth');
+        setTeamPlayersCount(seniorRoster.length);
+        const payroll = seniorRoster.reduce((sum, p) => sum + p.contract, 0);
         setTeamPayroll(payroll);
       }
       
       const allPlayers = await db.players.where('leagueId').equals(lid).toArray();
-      const fa = allPlayers.filter(p => !p.teamId).sort((a, b) => b.overall - a.overall);
+      const fa = allPlayers.filter(p => !p.teamId && !p.isDraftProspect && !p.isScouted).sort((a, b) => b.overall - a.overall);
       setFreeAgents(fa);
     }
     load();
@@ -53,9 +55,10 @@ export function FreeAgents() {
 
   const handleOpenNegotiation = (p: Player) => {
     setNegotiatingPlayer(p);
-    setOfferedWage(p.contract || Math.max(500000, p.overall * 100000));
+    const expectedWage = p.contract || calculateExpectedAnnualWage(p);
+    setOfferedWage(expectedWage);
     setOfferedYears(3);
-    setSigningBonus(Math.round(p.contract * 0.1));
+    setSigningBonus(Math.round(expectedWage * 0.1));
     setStatusMsg({ type: 'idle', msg: '' });
   };
 
@@ -63,7 +66,7 @@ export function FreeAgents() {
     if (!negotiatingPlayer || !team || !league) return;
 
     if (teamPlayersCount >= MAX_ROSTER) {
-      setStatusMsg({ type: 'rejected', msg: 'Plantilla llena. Tienes 25/25 jugadores.' });
+      setStatusMsg({ type: 'rejected', msg: `Plantilla del primer equipo llena (${MAX_ROSTER}/${MAX_ROSTER} fichas profesionales).` });
       return;
     }
 

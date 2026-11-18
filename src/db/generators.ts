@@ -42,27 +42,82 @@ function getClubTacticalIdentity(clubName: string): {
   mentality: string;
   pressLine: string;
   passingTempo: string;
+  coachName: string;
+  coachRep: number;
 } {
   const n = clubName.toLowerCase();
+  const realCoaches: Record<string, { name: string; rep: number }> = {
+    'real madrid': { name: 'Carlo Ancelotti', rep: 96 },
+    'barcelona': { name: 'Hansi Flick', rep: 92 },
+    'atletico': { name: 'Diego Simeone', rep: 91 },
+    'atlético': { name: 'Diego Simeone', rep: 91 },
+    'manchester city': { name: 'Pep Guardiola', rep: 98 },
+    'arsenal': { name: 'Mikel Arteta', rep: 90 },
+    'liverpool': { name: 'Arne Slot', rep: 89 },
+    'chelsea': { name: 'Enzo Maresca', rep: 84 },
+    'manchester united': { name: 'Rúben Amorim', rep: 86 },
+    'tottenham': { name: 'Ange Postecoglou', rep: 83 },
+    'aston villa': { name: 'Unai Emery', rep: 88 },
+    'newcastle': { name: 'Eddie Howe', rep: 84 },
+    'bayern': { name: 'Vincent Kompany', rep: 85 },
+    'leverkusen': { name: 'Xabi Alonso', rep: 93 },
+    'dortmund': { name: 'Niko Kovač', rep: 83 },
+    'leipzig': { name: 'Marco Rose', rep: 82 },
+    'paris saint': { name: 'Luis Enrique', rep: 91 },
+    'marseille': { name: 'Roberto De Zerbi', rep: 85 },
+    'monaco': { name: 'Adi Hütter', rep: 81 },
+    'inter': { name: 'Simone Inzaghi', rep: 92 },
+    'milan': { name: 'Sérgio Conceição', rep: 85 },
+    'juventus': { name: 'Thiago Motta', rep: 84 },
+    'napoli': { name: 'Antonio Conte', rep: 91 },
+    'atalanta': { name: 'Gian Piero Gasperini', rep: 88 },
+    'roma': { name: 'Claudio Ranieri', rep: 85 },
+    'athletic': { name: 'Ernesto Valverde', rep: 86 },
+    'real sociedad': { name: 'Imanol Alguacil', rep: 83 },
+    'villarreal': { name: 'Marcelino García Toral', rep: 84 },
+    'betis': { name: 'Manuel Pellegrini', rep: 85 },
+    'girona': { name: 'Míchel Sánchez', rep: 83 },
+    'river': { name: 'Marcelo Gallardo', rep: 89 },
+    'boca': { name: 'Fernando Gago', rep: 80 },
+    'racing': { name: 'Gustavo Costas', rep: 82 },
+    'independiente': { name: 'Julio Vaccari', rep: 78 }
+  };
+
+  let matchedCoach = { name: '', rep: 78 };
+  for (const key in realCoaches) {
+    if (n.includes(key)) {
+      matchedCoach = realCoaches[key];
+      break;
+    }
+  }
+  if (!matchedCoach.name) {
+    const fallbackCoaches = [
+      'José Bordalás', 'Andoni Iraola', 'Marco Silva', 'Oliver Glasner', 'Sebastián Beccacece',
+      'Eduardo Coudet', 'Vincenzo Italiano', 'Dino Toppmöller', 'Franck Haise', 'Carlos Corberán',
+      'Raffaele Palladino', 'Fabián Hürzeler', 'Kieran McKenna', 'Quique Sánchez Flores', 'Jagoba Arrasate'
+    ];
+    matchedCoach = { name: fallbackCoaches[clubName.length % fallbackCoaches.length], rep: 77 };
+  }
+
   if (n.includes('barcelona') || n.includes('manchester city') || n.includes('arsenal') || n.includes('paris saint')) {
-    return { formation: '4-3-3', tacticalStyle: 'Tiki-Taka (Posesión)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Corto' };
+    return { formation: '4-3-3', tacticalStyle: 'Tiki-Taka (Posesión)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Corto', coachName: matchedCoach.name, coachRep: matchedCoach.rep };
   }
   if (n.includes('liverpool') || n.includes('bayern') || n.includes('dortmund') || n.includes('leverkusen') || n.includes('athletic') || n.includes('river')) {
-    return { formation: '4-2-3-1', tacticalStyle: 'Gegenpressing (Presión Alta)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Directo' };
+    return { formation: '4-2-3-1', tacticalStyle: 'Gegenpressing (Presión Alta)', mentality: 'Ofensiva', pressLine: 'Alta', passingTempo: 'Directo', coachName: matchedCoach.name, coachRep: matchedCoach.rep };
   }
   if (n.includes('real madrid')) {
-    return { formation: '4-3-3', tacticalStyle: 'Contraataque Veloz', mentality: 'Ofensiva', pressLine: 'Media', passingTempo: 'Directo' };
+    return { formation: '4-3-3', tacticalStyle: 'Contraataque Veloz', mentality: 'Ofensiva', pressLine: 'Media', passingTempo: 'Directo', coachName: matchedCoach.name, coachRep: matchedCoach.rep };
   }
   if (n.includes('inter') || n.includes('atalanta')) {
-    return { formation: '3-5-2', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto' };
+    return { formation: '3-5-2', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto', coachName: matchedCoach.name, coachRep: matchedCoach.rep };
   }
-  if (n.includes('atletico') || n.includes('atlético') || n.includes('getafe') || n.includes('boca') || n.includes('juventus')) {
-    return { formation: '4-4-2', tacticalStyle: 'Bloque Bajo y Presión Zonal', mentality: 'Defensiva', pressLine: 'Bloque Bajo', passingTempo: 'Directo' };
+  if (n.includes('atletico') || n.includes('atlético') || n.includes('getafe') || n.includes('boca') || n.includes('juventus') || n.includes('napoli')) {
+    return { formation: '4-4-2', tacticalStyle: 'Bloque Bajo y Presión Zonal', mentality: 'Defensiva', pressLine: 'Bloque Bajo', passingTempo: 'Directo', coachName: matchedCoach.name, coachRep: matchedCoach.rep };
   }
   const styles = [
-    { formation: '4-3-3', tacticalStyle: 'Juego por las Bandas (Centros)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto' },
-    { formation: '4-2-3-1', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Corto' },
-    { formation: '4-4-2', tacticalStyle: 'Contraataque Veloz', mentality: 'Equilibrada', pressLine: 'Bloque Bajo', passingTempo: 'Directo' }
+    { formation: '4-3-3', tacticalStyle: 'Juego por las Bandas (Centros)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Mixto', coachName: matchedCoach.name, coachRep: matchedCoach.rep },
+    { formation: '4-2-3-1', tacticalStyle: 'Juego de Posición (Juego de Autor)', mentality: 'Equilibrada', pressLine: 'Media', passingTempo: 'Corto', coachName: matchedCoach.name, coachRep: matchedCoach.rep },
+    { formation: '4-4-2', tacticalStyle: 'Contraataque Veloz', mentality: 'Equilibrada', pressLine: 'Bloque Bajo', passingTempo: 'Directo', coachName: matchedCoach.name, coachRep: matchedCoach.rep }
   ];
   return styles[clubName.length % styles.length];
 }
@@ -228,6 +283,12 @@ export async function createNewLeague(
       mentality: tacId.mentality,
       pressLine: tacId.pressLine,
       passingTempo: tacId.passingTempo,
+      coach: {
+        name: tacId.coachName,
+        tacticalStyle: tacId.tacticalStyle,
+        formation: tacId.formation,
+        reputation: tacId.coachRep
+      },
       wins: 0,
       draws: 0,
       losses: 0,
@@ -526,6 +587,12 @@ export async function createRealLeagueFromTransfermarkt(
         mentality: tacId.mentality,
         pressLine: tacId.pressLine,
         passingTempo: tacId.passingTempo,
+        coach: {
+          name: tacId.coachName,
+          tacticalStyle: tacId.tacticalStyle,
+          formation: tacId.formation,
+          reputation: tacId.coachRep
+        },
         wins: 0,
         draws: 0,
         losses: 0,
