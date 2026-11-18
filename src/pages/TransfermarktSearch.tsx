@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { db, getInitialPlayerStats, type Player, type Team, formatMoney, isTransferWindowOpen } from '../db/db';
+import { db, getInitialPlayerStats, getDetailedAttributes, type Player, type Team, formatMoney, isTransferWindowOpen } from '../db/db';
 import {
   tmService,
   mapTMPositionToDB,
@@ -111,6 +111,23 @@ export function TransfermarktSearch() {
       return;
     }
 
+    // Check if player already exists in this league database
+    const existingPlayers = await db.players.where('leagueId').equals(lid).toArray();
+    const matchInDb = existingPlayers.find(ep => ep.name.toLowerCase() === p.name.toLowerCase());
+    if (matchInDb) {
+      if (matchInDb.teamId === league.userTeamId) {
+        alert(`${matchInDb.name} ya forma parte de tu plantilla.`);
+        navigate(`/l/${lid}/player/${matchInDb.id}`);
+        return;
+      } else if (matchInDb.teamId) {
+        navigate(`/l/${lid}/trades?playerId=${matchInDb.id}`);
+        return;
+      } else {
+        navigate(`/l/${lid}/player/${matchInDb.id}`);
+        return;
+      }
+    }
+
     const ovr = mapMarketValueToOVR(p.marketValue);
     const pot = Math.min(99, ovr + 5);
     const fee = p.marketValue ? Math.max(1000000, p.marketValue) : 5000000;
@@ -121,6 +138,9 @@ export function TransfermarktSearch() {
       return;
     }
 
+    const pos = mapTMPositionToDB(p.position);
+    const specPos = pos === 'POR' ? 'POR' : pos === 'DEF' ? 'DFC' : pos === 'MED' ? 'MC' : 'DC';
+
     const newPlayer: Player = {
       leagueId: lid,
       teamId: league.userTeamId,
@@ -128,10 +148,13 @@ export function TransfermarktSearch() {
       age: p.age || 24,
       overall: ovr,
       potential: pot,
-      position: mapTMPositionToDB(p.position),
+      position: pos,
+      specificPosition: specPos,
       contract: Math.max(500000, Math.floor(fee * 0.08)),
       contractYears: 3,
       contractEndSeason: league.season + 3,
+      releaseClause: fee * 3,
+      lineupStatus: 'reserve',
       stats: getInitialPlayerStats(),
       attributes: {
         pace: Math.min(99, ovr + 2),
@@ -144,17 +167,32 @@ export function TransfermarktSearch() {
       bio: {
         height: 180,
         weight: 75,
-        country: (p.nationalities && p.nationalities.length > 0) ? p.nationalities[0] : 'Desconocido'
+        country: (p.nationalities && p.nationalities.length > 0) ? p.nationalities[0] : 'Internacional',
+        preferredFoot: 'Right',
+        weakFoot: 3,
+        skillMoves: 3
       }
     };
+    newPlayer.detailedAttributes = getDetailedAttributes(newPlayer);
 
-    await db.players.add(newPlayer);
+    const newPlayerId = await db.players.add(newPlayer) as number;
     if (userTeam) {
       userTeam.budget -= fee;
       await db.teams.put(userTeam);
     }
 
-    alert(`¡${p.name} (OVR ${ovr}) ha sido fichado por ${userTeam?.name || 'tu equipo'} por €${(fee/1000000).toFixed(1)}M!`);
+    await db.transactions.add({
+      leagueId: lid,
+      type: 'transfer',
+      playerId: newPlayerId,
+      toTeamId: league.userTeamId,
+      amount: fee,
+      season: league.season,
+      week: league.currentWeek,
+      date: Date.now()
+    });
+
+    alert(`¡${p.name} (OVR ${ovr}) ha sido fichado desde el mercado internacional por ${userTeam?.name || 'tu equipo'} por €${(fee/1000000).toFixed(1)}M!`);
     navigate(`/l/${lid}/roster`);
   };
 

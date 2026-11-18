@@ -34,18 +34,27 @@ export function History() {
         setHistory(hist);
 
         const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
-        setPlayers(p.sort((a, b) => b.overall - a.overall));
+        const sortedP = p.sort((a, b) => b.overall - a.overall);
+        setPlayers(sortedP);
+        setRetiredJerseys(sortedP.filter(pl => pl.isHallOfFame && pl.id).map(pl => pl.id!));
       }
     }
     load();
   }, [leagueId]);
 
-  const handleRetireJersey = (playerId: number) => {
-    if (retiredJerseys.includes(playerId)) {
+  const handleRetireJersey = async (playerId: number) => {
+    const target = players.find(p => p.id === playerId);
+    if (!target) return;
+
+    const nextState = !retiredJerseys.includes(playerId);
+    target.isHallOfFame = nextState;
+    await db.players.put(target);
+
+    if (!nextState) {
       setRetiredJerseys(r => r.filter(id => id !== playerId));
     } else {
       setRetiredJerseys(r => [...r, playerId]);
-      alert('¡Dorsal retirado en honor a la trayectoria del jugador!');
+      alert(`¡Dorsal retirado y ${target.name} consagrado en el Salón de la Fama de la liga!`);
     }
   };
 

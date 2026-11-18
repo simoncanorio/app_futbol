@@ -222,6 +222,7 @@ export function Tactics() {
   const [captainId, setCaptainId] = useState<number | null>(null);
   const [penaltyTakerId, setPenaltyTakerId] = useState<number | null>(null);
   const [freeKickTakerId, setFreeKickTakerId] = useState<number | null>(null);
+  const [cornerTakerId, setCornerTakerId] = useState<number | null>(null);
 
   const [draggedPlayerId, setDraggedPlayerId] = useState<number | null>(null);
 
@@ -249,6 +250,7 @@ export function Tactics() {
           setCaptainId(uTeam?.captainId || sorted[0].id || null);
           setPenaltyTakerId(uTeam?.penaltyTakerId || sorted[0].id || null);
           setFreeKickTakerId(uTeam?.freeKickTakerId || sorted[1]?.id || sorted[0].id || null);
+          setCornerTakerId(uTeam?.cornerTakerId || sorted[1]?.id || sorted[0].id || null);
         }
       }
     }
@@ -293,6 +295,20 @@ export function Tactics() {
     e.dataTransfer.setData('playerId', playerId.toString());
   };
 
+  const syncTeamOverallAndChemistry = async (updatedList: Player[]) => {
+    if (!team) return;
+    const newStarters = updatedList.filter(p => p.lineupStatus === 'starter');
+    let effSum = 0;
+    newStarters.forEach(p => {
+      const slot = currentSlots.find(s => s.id === p.pitchPosition);
+      const pen = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition) : 0;
+      effSum += Math.max(35, p.overall - pen);
+    });
+    const newOvr = newStarters.length > 0 ? Math.round(effSum / newStarters.length) : team.overall;
+    const newChem = calculateTeamChemistry(newStarters, team).score;
+    await persistTeamPatch({ overall: newOvr, teamChemistry: newChem });
+  };
+
   const handleDropToPitch = async (e: React.DragEvent, slotId: string) => {
     e.preventDefault();
     if (!draggedPlayerId) return;
@@ -301,11 +317,28 @@ export function Tactics() {
     const draggedPlayer = newPlayers.find(p => p.id === draggedPlayerId);
     if (!draggedPlayer) return;
 
-    const existingPlayer = newPlayers.find(p => p.lineupStatus === 'starter' && p.pitchPosition === slotId);
+    if (draggedPlayer.isInjured) {
+      alert(`🚑 ${draggedPlayer.name} está lesionado (${draggedPlayer.injuryWeeks} sem) y no puede ser alineado en el once titular.`);
+      setDraggedPlayerId(null);
+      return;
+    }
+    if (draggedPlayer.cards?.suspended) {
+      alert(`🟥 ${draggedPlayer.name} cumple sanción federativa y no puede jugar esta jornada.`);
+      setDraggedPlayerId(null);
+      return;
+    }
 
-    if (existingPlayer) {
-      existingPlayer.lineupStatus = 'bench';
-      existingPlayer.pitchPosition = undefined;
+    const existingPlayer = newPlayers.find(p => p.lineupStatus === 'starter' && p.pitchPosition === slotId);
+    const wasAlreadyStarter = draggedPlayer.lineupStatus === 'starter' && draggedPlayer.pitchPosition;
+
+    if (existingPlayer && existingPlayer.id !== draggedPlayer.id) {
+      if (wasAlreadyStarter) {
+        // Swap pitch positions between the two starters!
+        existingPlayer.pitchPosition = draggedPlayer.pitchPosition;
+      } else {
+        existingPlayer.lineupStatus = 'bench';
+        existingPlayer.pitchPosition = undefined;
+      }
       await db.players.put(existingPlayer);
     }
 
@@ -315,6 +348,7 @@ export function Tactics() {
 
     setPlayers(newPlayers);
     setDraggedPlayerId(null);
+    await syncTeamOverallAndChemistry(newPlayers);
   };
 
   const handleDropToBench = async (e: React.DragEvent) => {
@@ -331,6 +365,7 @@ export function Tactics() {
 
     setPlayers(newPlayers);
     setDraggedPlayerId(null);
+    await syncTeamOverallAndChemistry(newPlayers);
   };
 
   const handleSaveTacticalStyle = async (styleName: string) => {
@@ -639,6 +674,19 @@ export function Tactics() {
               <select
                 value={freeKickTakerId || ''}
                 onChange={e => { const v = Number(e.target.value); setFreeKickTakerId(v); persistTeamPatch({ freeKickTakerId: v }); }}
+                className="bb-select"
+              >
+                {players.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} (OVR {p.overall} - {p.position})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Lanzador de Saques de Esquina (Córners):</label>
+              <select
+                value={cornerTakerId || ''}
+                onChange={e => { const v = Number(e.target.value); setCornerTakerId(v); persistTeamPatch({ cornerTakerId: v }); }}
                 className="bb-select"
               >
                 {players.map(p => (

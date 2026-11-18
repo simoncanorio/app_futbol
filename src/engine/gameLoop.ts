@@ -129,8 +129,43 @@ export async function advanceWeek(leagueId: number) {
         await db.teams.put(userTeam);
 
         if (userTeam.boardConfidence <= 0) {
-          league.userTeamId = null;
+          // Record stint in gmHistory before reassigning
+          const matchesPlayed = userTeam.wins + userTeam.draws + userTeam.losses;
+          if (matchesPlayed > 0) {
+            await db.gmHistory.add({
+              season: league.season,
+              leagueId: league.id!,
+              teamId: userTeam.id!,
+              teamName: userTeam.name,
+              wins: userTeam.wins,
+              draws: userTeam.draws,
+              losses: userTeam.losses,
+              goalsFor: userTeam.goalsFor,
+              goalsAgainst: userTeam.goalsAgainst
+            });
+          }
+
+          userTeam.boardConfidence = 85;
+          await db.teams.put(userTeam);
+
+          const newRep = Math.max(25, (league.managerReputation || 60) - 12);
+          const otherClubs = Array.from(teamMap.values())
+            .filter(t => t.id !== userTeam.id)
+            .sort((a, b) => (a.prestige || 70) - (b.prestige || 70));
+          const reboundClub = otherClubs[0] || userTeam;
+
+          league.userTeamId = reboundClub.id!;
+          league.managerReputation = newRep;
           await db.leagues.put(league);
+
+          await db.notes.add({
+            leagueId,
+            entityType: 'team',
+            entityId: reboundClub.id,
+            text: `🚨 DESTITUCIÓN OFICIAL: La Junta Directiva de ${userTeam.name} rescindió tu contrato tras caer la confianza al 0%. Has firmado de urgencia con ${reboundClub.name} (puedes revisar otras ofertas en Historial del Mánager).`,
+            createdAt: Date.now()
+          });
+
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('manager_fired'));
           }
