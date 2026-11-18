@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team } from '../db/db';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { db, type Player, type Team, formatMoney, getSpecificPosition } from '../db/db';
+import { calculatePlayerMarketValue } from '../engine/valuationEngine';
+import { ArrowLeftRight } from 'lucide-react';
 
 export function AdvancedSearch() {
   const { leagueId } = useParams();
+  const navigate = useNavigate();
   const [players, setPlayers] = useState<(Player & { teamObj?: Team })[]>([]);
   
   // Filters
+  const [nameQuery, setNameQuery] = useState<string>('');
   const [posFilter, setPosFilter] = useState<string>('ALL');
+  const [contractFilter, setContractFilter] = useState<'ALL' | 'free' | 'expiring' | 'listed'>('ALL');
   const [minAge, setMinAge] = useState<number>(15);
   const [maxAge, setMaxAge] = useState<number>(45);
   const [minOvr, setMinOvr] = useState<number>(0);
@@ -41,8 +46,19 @@ export function AdvancedSearch() {
 
   // Apply filters
   let filtered = players.filter(p => p.age >= minAge && p.age <= maxAge && p.overall >= minOvr && p.overall <= maxOvr);
+  if (nameQuery.trim()) {
+    const q = nameQuery.toLowerCase();
+    filtered = filtered.filter(p => p.name.toLowerCase().includes(q) || (p.bio?.country || '').toLowerCase().includes(q));
+  }
   if (posFilter !== 'ALL') {
-    filtered = filtered.filter(p => p.position === posFilter);
+    filtered = filtered.filter(p => p.position === posFilter || getSpecificPosition(p) === posFilter);
+  }
+  if (contractFilter === 'free') {
+    filtered = filtered.filter(p => !p.teamId);
+  } else if (contractFilter === 'expiring') {
+    filtered = filtered.filter(p => p.teamId && (p.contractYears || 2) <= 1);
+  } else if (contractFilter === 'listed') {
+    filtered = filtered.filter(p => p.isTransferListed || p.isLoanListed);
   }
   
   filtered.sort((a,b) => b.overall - a.overall);
@@ -60,13 +76,41 @@ export function AdvancedSearch() {
           <h3 style={{marginTop: 0, color: '#e67e22', borderBottom: '1px solid #333', paddingBottom: '0.5rem'}}>Filtros</h3>
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
             <div>
+              <label style={{display: 'block', fontSize: '13px', color: '#aaa', marginBottom: '4px'}}>Nombre / Nacionalidad</label>
+              <input
+                type="text"
+                placeholder="Ej: Bellingham, España..."
+                value={nameQuery}
+                onChange={e => {setNameQuery(e.target.value); setPage(0);}}
+                style={{width: '100%', background: '#222', color: 'white', border: '1px solid #444', padding: '6px', borderRadius: '4px'}}
+              />
+            </div>
+            <div>
               <label style={{display: 'block', fontSize: '13px', color: '#aaa', marginBottom: '4px'}}>Posición</label>
               <select value={posFilter} onChange={e => {setPosFilter(e.target.value); setPage(0);}} style={{width: '100%', background: '#222', color: 'white', border: '1px solid #444', padding: '6px', borderRadius: '4px'}}>
                 <option value="ALL">Todas</option>
                 <option value="POR">Porteros (POR)</option>
                 <option value="DEF">Defensores (DEF)</option>
+                <option value="DFC">Centrales (DFC)</option>
+                <option value="LI">Lateral Izq. (LI)</option>
+                <option value="LD">Lateral Der. (LD)</option>
                 <option value="MED">Medios (MED)</option>
+                <option value="MCD">Pivotes (MCD)</option>
+                <option value="MC">Mediocentros (MC)</option>
+                <option value="MCO">Mediapuntas (MCO)</option>
                 <option value="DEL">Delanteros (DEL)</option>
+                <option value="EI">Extremo Izq. (EI)</option>
+                <option value="ED">Extremo Der. (ED)</option>
+                <option value="DC">Delantero Centro (DC)</option>
+              </select>
+            </div>
+            <div>
+              <label style={{display: 'block', fontSize: '13px', color: '#aaa', marginBottom: '4px'}}>Situación Contractual</label>
+              <select value={contractFilter} onChange={e => {setContractFilter(e.target.value as any); setPage(0);}} style={{width: '100%', background: '#222', color: 'white', border: '1px solid #444', padding: '6px', borderRadius: '4px'}}>
+                <option value="ALL">Cualquiera</option>
+                <option value="free">Agente Libre (Sin Club)</option>
+                <option value="expiring">Último Año de Contrato (≤ 1 año)</option>
+                <option value="listed">En Lista de Traspasos / Cesión</option>
               </select>
             </div>
             <div>
@@ -101,7 +145,7 @@ export function AdvancedSearch() {
             </label>
             <label style={{display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer'}}>
               <input type="checkbox" checked={showStats} onChange={e => setShowStats(e.target.checked)} />
-              Estadísticas Propias (Goles, Asistencias, Amarillas)
+              Estadísticas Propias (Goles, Asistencias, xG, Nota)
             </label>
           </div>
         </div>
@@ -113,15 +157,17 @@ export function AdvancedSearch() {
         <table className="table-container bb-table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Nombre</th>
               <th>Pos</th>
-              <th>Team</th>
-              <th>Age</th>
+              <th>Club</th>
+              <th>Edad</th>
               <th>OVR</th>
               <th>POT</th>
-              {showBio && <><th>Height</th><th>Weight</th><th>Country</th></>}
+              <th>Valor</th>
+              {showBio && <><th>Altura</th><th>Peso</th><th>País</th></>}
               {showRatings && <><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th></>}
-              {showStats && <><th>GP</th><th>Gls</th><th>Ast</th><th>YC</th><th>CS</th></>}
+              {showStats && <><th>PJ</th><th>Gls</th><th>Ast</th><th>xG</th><th>Nota</th></>}
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -132,7 +178,7 @@ export function AdvancedSearch() {
                     {p.name}
                   </Link>
                 </td>
-                <td>{p.position}</td>
+                <td>{getSpecificPosition(p)}</td>
                 <td>
                   {p.teamObj ? (
                     <Link to={`/l/${leagueId}/team/${p.teamObj.id}`} style={{color: '#e67e22', textDecoration: 'none'}}>
@@ -143,6 +189,7 @@ export function AdvancedSearch() {
                 <td>{p.age}</td>
                 <td style={{fontWeight: 'bold', color: '#3b82f6'}}>{p.overall}</td>
                 <td>{p.potential}</td>
+                <td style={{color: '#10b981', fontWeight: 600}}>{formatMoney(calculatePlayerMarketValue(p))}</td>
                 
                 {showBio && (
                   <>
@@ -166,12 +213,20 @@ export function AdvancedSearch() {
                 {showStats && (
                   <>
                     <td>{p.stats?.gamesPlayed || 0}</td>
-                    <td style={{color: '#e67e22'}}>{p.stats?.goals || 0}</td>
+                    <td style={{color: '#e67e22', fontWeight: 'bold'}}>{p.stats?.goals || 0}</td>
                     <td>{p.stats?.assists || 0}</td>
-                    <td>{p.stats?.yellowCards || 0}</td>
-                    <td>{p.position === 'POR' ? (p.stats?.cleanSheets || 0) : '-'}</td>
+                    <td>{(p.stats?.xG || 0).toFixed(1)}</td>
+                    <td style={{color: '#fbbf24', fontWeight: 'bold'}}>{p.stats?.averageRating ? p.stats.averageRating.toFixed(1) : '-'}</td>
                   </>
                 )}
+                <td>
+                  <button
+                    onClick={() => navigate(p.teamId ? `/l/${leagueId}/trades?playerId=${p.id}` : `/l/${leagueId}/player/${p.id}`)}
+                    style={{ background: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 'bold' }}
+                  >
+                    <ArrowLeftRight size={11} /> {p.teamId ? 'Fichar' : 'Firmar'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

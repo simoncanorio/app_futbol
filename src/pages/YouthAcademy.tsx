@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League, formatMoney, getInitialPlayerStats } from '../db/db';
+import { db, type Player, type Team, type League, formatMoney, getInitialPlayerStats, getDetailedAttributes } from '../db/db';
 import { CustomModal } from '../components/common/CustomModal';
 import { Sparkles, Dumbbell, Shield, Target, Activity, HeartPulse, Search, UserPlus, ArrowUpRight, Award } from 'lucide-react';
 
@@ -170,7 +170,7 @@ export function YouthAcademy() {
       const overall = 58 + Math.floor(Math.random() * 14); // 58-71
       const potential = Math.min(96, overall + 14 + Math.floor(Math.random() * 16)); // 72-96
 
-      candidates.push({
+      const candidatePlayer: Player = {
         leagueId: league.id!,
         teamId: team.id!,
         name: `${name} (Canterano)`,
@@ -179,18 +179,24 @@ export function YouthAcademy() {
         potential,
         position: pos,
         specificPosition: spec,
-        contract: 15000,
+        contract: 150000,
         contractYears: 4,
+        contractEndSeason: league.season + 4,
         lineupStatus: 'youth',
         recruitedYear: league.season,
+        personality: 'Ambicioso',
+        developmentType: 'early_bloomer',
         stats: getInitialPlayerStats(),
         bio: {
           country,
           height: 170 + Math.floor(Math.random() * 20),
-          weight: 62 + Math.floor(Math.random() * 22)
+          weight: 62 + Math.floor(Math.random() * 22),
+          preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+          weakFoot: 3,
+          skillMoves: 3
         },
         attributes: {
-          pace: overall + Math.floor(Math.random() * 12) - 6,
+          pace: overall + Math.floor(Math.random() * 12) - 2,
           shooting: pos === 'DEL' ? overall + 6 : overall - 8,
           passing: pos === 'MED' ? overall + 6 : overall - 6,
           dribbling: overall + Math.floor(Math.random() * 8) - 2,
@@ -200,7 +206,9 @@ export function YouthAcademy() {
         morale: 95,
         fatigue: 0,
         isInjured: false
-      });
+      };
+      candidatePlayer.detailedAttributes = getDetailedAttributes(candidatePlayer);
+      candidates.push(candidatePlayer);
     }
 
     setSignedCandidateIndices([]);

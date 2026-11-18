@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, type TransferOffer, formatMoney, isTransferWindowOpen } from '../db/db';
 import { calculateTransferAskingPrice, calculateExpectedAnnualWage, calculatePlayerMarketValue } from '../engine/valuationEngine';
 import { autoSelectLineupForTeam } from '../utils/lineupUtils';
@@ -8,6 +8,7 @@ import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function Trades() {
   const { leagueId } = useParams();
+  const [searchParams] = useSearchParams();
   const [league, setLeague] = useState<League | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -64,9 +65,10 @@ export function Trades() {
       setLeague(l);
 
       const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
+      const otherTeams = l.userTeamId ? allTeams.filter(t => t.id !== l.userTeamId) : allTeams;
       if (l.userTeamId) {
         await loadTeamFinancials(lid, l.userTeamId);
-        setTeams(allTeams.filter(t => t.id !== l.userTeamId));
+        setTeams(otherTeams);
         const offers = await db.transferOffers
           .where('toUserTeamId')
           .equals(l.userTeamId)
@@ -76,9 +78,33 @@ export function Trades() {
       } else {
         setTeams(allTeams);
       }
+
+      const preselectedPlayerId = searchParams.get('playerId');
+      if (preselectedPlayerId) {
+        const targetPlayer = await db.players.get(Number(preselectedPlayerId));
+        if (targetPlayer && targetPlayer.teamId && targetPlayer.teamId !== l.userTeamId) {
+          setSelectedTeamId(targetPlayer.teamId);
+          const sellerTeam = otherTeams.find(t => t.id === targetPlayer.teamId);
+          const uTeam = l.userTeamId ? await db.teams.get(l.userTeamId) : undefined;
+          const val = calculateTransferAskingPrice(targetPlayer, sellerTeam, uTeam, l.difficulty || 'Normal');
+          const expWage = calculateExpectedAnnualWage(targetPlayer, uTeam?.prestige || 75);
+          setNegotiatingPlayer(targetPlayer);
+          setStep('club_fee');
+          setTradeType('transfer');
+          setOfferAmount(val.askingPrice);
+          setSellOnPercent(10);
+          setSwapPlayerId('');
+          setAddonAmount(0);
+          setBuyOptionFee(Math.round(val.marketValue * 1.1));
+          setPlayerWage(Math.max(targetPlayer.contract || expWage, expWage));
+          setContractYears(3);
+          setSigningBonus(Math.round(expWage * 0.2));
+          setAiStatus({ status: 'idle', msg: '' });
+        }
+      }
     }
     load();
-  }, [leagueId]);
+  }, [leagueId, searchParams]);
 
   const handleAcceptIncomingOffer = async (offer: TransferOffer, customAmount?: number) => {
     if (!userTeam || !league) return;

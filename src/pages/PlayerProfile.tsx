@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, getSpecificPosition, formatMoney } from '../db/db';
 import { calculatePlayerMarketValue } from '../engine/valuationEngine';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
@@ -9,6 +9,7 @@ import { ContractNegotiationModal } from '../components/common/ContractNegotiati
 
 export function PlayerProfile() {
   const { leagueId, playerId } = useParams();
+  const navigate = useNavigate();
   const [player, setPlayer] = useState<Player | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
@@ -117,7 +118,13 @@ export function PlayerProfile() {
             {userTeam && (
               <div style={{ marginTop: '0.65rem' }}>
                 <button
-                  onClick={() => setShowContractModal(true)}
+                  onClick={() => {
+                    if (player.teamId && player.teamId !== userTeam.id) {
+                      navigate(`/l/${leagueId}/trades?playerId=${player.id}`);
+                    } else {
+                      setShowContractModal(true);
+                    }
+                  }}
                   style={{
                     padding: '6px 14px',
                     borderRadius: '6px',
@@ -132,7 +139,7 @@ export function PlayerProfile() {
                     gap: '6px'
                   }}
                 >
-                  <FileText size={15} /> {player.teamId === userTeam.id ? 'Renovar Contrato' : 'Negociar Fichaje / Cesión'}
+                  <FileText size={15} /> {player.teamId === userTeam.id ? 'Renovar Contrato' : (player.teamId ? 'Negociar Fichaje / Cesión con Club' : 'Firmar Agente Libre')}
                 </button>
               </div>
             )}
@@ -388,6 +395,123 @@ export function PlayerProfile() {
 
         </div>
       </div>
+
+      {/* 33 SUB-ATTRIBUTES SECTION */}
+      {player.detailedAttributes && (
+        <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 1rem 0', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Award size={18} /> Desglose Completo de Sub-Atributos (33 Métricas EA FC 26)
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1.25rem', fontSize: '0.82rem' }}>
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#38bdf8', borderBottom: '1px solid rgba(56,189,248,0.2)', paddingBottom: '4px' }}>⚡ Físico & Ritmo</h4>
+              {[
+                ['Aceleración', player.detailedAttributes.acceleration],
+                ['Velocidad Sprint', player.detailedAttributes.sprintSpeed],
+                ['Agilidad', player.detailedAttributes.agility],
+                ['Equilibrio', player.detailedAttributes.balance],
+                ['Salto', player.detailedAttributes.jumping],
+                ['Resistencia', player.detailedAttributes.stamina],
+                ['Fuerza', player.detailedAttributes.strength]
+              ].map(([lbl, val]) => (
+                <div key={String(lbl)} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: '#94a3b8' }}>{lbl}</span>
+                  <strong style={{ color: Number(val) >= 85 ? '#10b981' : Number(val) >= 75 ? '#38bdf8' : '#cbd5e1' }}>{val}</strong>
+                </div>
+              ))}
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#ef4444', borderBottom: '1px solid rgba(239,68,68,0.2)', paddingBottom: '4px' }}>🎯 Tiro & Ataque</h4>
+              {[
+                ['Definición', player.detailedAttributes.finishing],
+                ['Potencia Tiro', player.detailedAttributes.shotPower],
+                ['Tiros Lejanos', player.detailedAttributes.longShots],
+                ['Voleas', player.detailedAttributes.volleys],
+                ['Penaltis', player.detailedAttributes.penalties],
+                ['Efecto', player.detailedAttributes.curve],
+                ['Precisión Falta', player.detailedAttributes.freeKickAccuracy],
+                ['Cabeceo', player.detailedAttributes.headingAccuracy]
+              ].map(([lbl, val]) => (
+                <div key={String(lbl)} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: '#94a3b8' }}>{lbl}</span>
+                  <strong style={{ color: Number(val) >= 85 ? '#10b981' : Number(val) >= 75 ? '#38bdf8' : '#cbd5e1' }}>{val}</strong>
+                </div>
+              ))}
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#10b981', borderBottom: '1px solid rgba(16,185,129,0.2)', paddingBottom: '4px' }}>👟 Pase, Control & Mental</h4>
+              {[
+                ['Pase Corto', player.detailedAttributes.shortPassing],
+                ['Pase Largo', player.detailedAttributes.longPassing],
+                ['Centros', player.detailedAttributes.crossing],
+                ['Control Balón', player.detailedAttributes.ballControl],
+                ['Visión', player.detailedAttributes.vision],
+                ['Compostura', player.detailedAttributes.composure],
+                ['Reacciones', player.detailedAttributes.reactions],
+                ['Pos. Ataque', player.detailedAttributes.positioning]
+              ].map(([lbl, val]) => (
+                <div key={String(lbl)} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: '#94a3b8' }}>{lbl}</span>
+                  <strong style={{ color: Number(val) >= 85 ? '#10b981' : Number(val) >= 75 ? '#38bdf8' : '#cbd5e1' }}>{val}</strong>
+                </div>
+              ))}
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#f59e0b', borderBottom: '1px solid rgba(245,158,11,0.2)', paddingBottom: '4px' }}>🛡️ Defensa & Portería</h4>
+              {[
+                ['Conciencia Def.', player.detailedAttributes.defAwareness],
+                ['Entrada Normal', player.detailedAttributes.standingTackle],
+                ['Entrada Agresiva', player.detailedAttributes.slidingTackle],
+                ['Intercepciones', player.detailedAttributes.interceptions],
+                ['Agresividad', player.detailedAttributes.aggression],
+                ['POR Estirada', player.detailedAttributes.gkDiving],
+                ['POR Reflejos', player.detailedAttributes.gkReflexes],
+                ['POR Posición', player.detailedAttributes.gkPositioning]
+              ].map(([lbl, val]) => (
+                <div key={String(lbl)} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: '#94a3b8' }}>{lbl}</span>
+                  <strong style={{ color: Number(val) >= 85 ? '#10b981' : Number(val) >= 75 ? '#38bdf8' : '#cbd5e1' }}>{val}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORICAL CAREER STATS BY SEASON */}
+      {player.historicalStats && Object.keys(player.historicalStats).length > 0 && (
+        <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 0.8rem 0', color: '#38bdf8' }}>📅 Historial de Rendimiento por Temporada</h3>
+          <table className="table-container bb-table">
+            <thead>
+              <tr>
+                <th>Temporada</th>
+                <th>PJ</th>
+                <th>Minutos</th>
+                <th>Goles</th>
+                <th>xG</th>
+                <th>Asistencias</th>
+                <th>xA</th>
+                <th>Nota Media</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(player.historicalStats).map(([yr, st]) => (
+                <tr key={yr}>
+                  <td><strong>{yr}</strong></td>
+                  <td>{st.gamesPlayed || 0}</td>
+                  <td>{st.minutesPlayed || 0}'</td>
+                  <td style={{ fontWeight: 'bold', color: '#ef4444' }}>{st.goals || 0}</td>
+                  <td>{(st.xG || 0).toFixed(2)}</td>
+                  <td style={{ fontWeight: 'bold', color: '#10b981' }}>{st.assists || 0}</td>
+                  <td>{(st.xA || 0).toFixed(2)}</td>
+                  <td style={{ fontWeight: 'bold', color: '#fbbf24' }}>{st.averageRating ? st.averageRating.toFixed(2) : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showContractModal && userTeam && (
         <ContractNegotiationModal

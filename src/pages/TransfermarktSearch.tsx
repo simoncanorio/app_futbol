@@ -269,7 +269,7 @@ export function TransfermarktSearch() {
                     </span>
                   </td>
                   <td>
-                    <button className="tm-btn-primary" onClick={() => navigate(`/l/${leagueId}/trades`)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
+                    <button className="tm-btn-primary" onClick={() => navigate(`/l/${leagueId}/trades?playerId=${p.id}`)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
                       <ArrowLeftRight size={14} /> Negociar Fichaje
                     </button>
                   </td>

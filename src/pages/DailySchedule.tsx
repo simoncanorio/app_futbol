@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db, type Match, type Team, type Player, type League } from '../db/db';
-import { advanceWeek } from '../engine/gameLoop';
+import { advanceWeek, getLeagueMaxWeeks } from '../engine/gameLoop';
 import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
 import { Play, CheckCircle, Calendar, ChevronLeft, ChevronRight, Trophy } from 'lucide-react';
 import './DailySchedule.css';
@@ -13,6 +13,7 @@ interface MatchView extends Match {
 
 export function DailySchedule() {
   const { leagueId } = useParams();
+  const navigate = useNavigate();
   const [league, setLeague] = useState<League | null>(null);
   const [selectedJornada, setSelectedJornada] = useState<number>(1);
   const [maxJornadas, setMaxJornadas] = useState<number>(38);
@@ -30,21 +31,20 @@ export function DailySchedule() {
     const l = await db.leagues.get(lid);
     if (!l) return;
     setLeague(l);
-    setSelectedJornada(l.currentWeek);
 
-    // Calculate total matchdays from teams count
     const teams = await db.teams.where('leagueId').equals(lid).toArray();
     const teamMap = new Map(teams.map(t => [t.id!, t]));
 
-    const numTeams = teams.length;
-    const computedMax = numTeams > 1 ? (numTeams % 2 === 0 ? (numTeams - 1) * 2 : numTeams * 2) : 38;
+    const computedMax = await getLeagueMaxWeeks(lid);
     setMaxJornadas(computedMax);
+    const activeWeek = Math.min(l.currentWeek, computedMax);
+    setSelectedJornada(activeWeek);
 
     // Load fixtures for current selected week
     const weekMatches = await db.matches
       .where('leagueId')
       .equals(lid)
-      .filter(m => m.week === (selectedJornada || l.currentWeek))
+      .filter(m => m.week === activeWeek)
       .toArray();
 
     const views: MatchView[] = weekMatches.map(m => ({
@@ -106,7 +106,11 @@ export function DailySchedule() {
   };
 
   const handleSimulateWeek = async () => {
-    if (!leagueId) return;
+    if (!leagueId || !league) return;
+    if (league.currentWeek > maxJornadas) {
+      navigate(`/l/${leagueId}/season_summary`);
+      return;
+    }
     await advanceWeek(Number(leagueId));
     loadData();
   };
@@ -116,10 +120,12 @@ export function DailySchedule() {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1>Calendario Diario de Partidos & Simulación 3D</h1>
-          <p style={{ color: '#94a3b8', margin: 0 }}>Partidos distribuidos por jornadas oficiales (Jornada 1 a 38).</p>
+          <p style={{ color: '#94a3b8', margin: 0 }}>Partidos distribuidos por jornadas oficiales (Jornada 1 a {maxJornadas}).</p>
         </div>
         <button className="play-btn-lg" onClick={handleSimulateWeek}>
-          Simular Jornada {league?.currentWeek}
+          {league && league.currentWeek > maxJornadas
+            ? '🏆 Ver Resumen de Fin de Temporada'
+            : `Simular Jornada ${league?.currentWeek}`}
         </button>
       </div>
 
@@ -173,6 +179,10 @@ export function DailySchedule() {
               ) : m.type === 'continental' ? (
                 <span style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: '1px solid #f59e0b', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
                   🌟 CHAMPIONS LEAGUE
+                </span>
+              ) : m.type === 'europa' ? (
+                <span style={{ background: 'rgba(249, 115, 22, 0.2)', color: '#fb923c', border: '1px solid #fb923c', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  🛡️ EUROPA LEAGUE
                 </span>
               ) : (
                 <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>

@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type Team, type League, getSpecificPosition } from '../db/db';
-import { Tag, RefreshCw, AlertOctagon, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { db, type Player, type Team, type League, getSpecificPosition, formatMoney } from '../db/db';
+import { calculatePlayerMarketValue, calculateExpectedAnnualWage } from '../engine/valuationEngine';
+import { Tag, RefreshCw, AlertOctagon, CheckCircle2, XCircle, FileText, ArrowLeftRight } from 'lucide-react';
 import { CustomModal } from '../components/common/CustomModal';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function Roster() {
   const { leagueId, teamId } = useParams();
+  const navigate = useNavigate();
   const [league, setLeague] = useState<League | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [team, setTeam] = useState<Team | null>(null);
   const [isUserTeam, setIsUserTeam] = useState(false);
+  const [squadFilter, setSquadFilter] = useState<'senior' | 'youth' | 'all'>('senior');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Player, direction: 'asc' | 'desc' }>({ key: 'overall', direction: 'desc' });
 
   // Renewal Modal
@@ -49,25 +52,41 @@ export function Roster() {
     p.isTransferListed = !p.isTransferListed;
     await db.players.put(p);
     setPlayers([...players]);
-    alert(p.isTransferListed ? `${p.name} ha sido colocado en la Lista de Traspasos.` : `${p.name} ha sido retirado de la Lista de Traspasos.`);
+  };
+
+  const handleRoleChange = async (p: Player, newRole: Player['squadRole']) => {
+    p.squadRole = newRole;
+    await db.players.put(p);
+    setPlayers([...players]);
   };
 
   const handleOpenRenew = (p: Player) => {
     setRenewingPlayer(p);
-    setRenewSalary(Math.round(p.contract * 1.15));
+    const expectedWage = calculateExpectedAnnualWage(p, team?.prestige || 75);
+    const targetOffer = Math.max(Math.round(p.contract * 1.12), expectedWage);
+    setRenewSalary(targetOffer);
     setRenewYears(3);
-    setRenewBonus(Math.round(p.contract * 0.1));
+    setRenewBonus(Math.round(targetOffer * 0.1));
     setRenewStatus({ type: 'idle', msg: '' });
   };
 
   const handleExecuteRenewal = async () => {
     if (!renewingPlayer || !team || !league) return;
 
-    const askingSalary = renewingPlayer.contract * 1.05;
+    const expectedWage = calculateExpectedAnnualWage(renewingPlayer, team.prestige || 75);
+    const askingSalary = Math.max(Math.round(renewingPlayer.contract * 1.05), Math.round(expectedWage * 0.92));
+
+    if (renewBonus > team.budget) {
+      setRenewStatus({ type: 'rejected', msg: 'Presupuesto insuficiente para cubrir la prima de renovación.' });
+      return;
+    }
+
     if (renewSalary >= askingSalary * 0.95) {
       renewingPlayer.contract = renewSalary;
       renewingPlayer.contractYears = renewYears;
       renewingPlayer.contractEndSeason = league.season + renewYears;
+      renewingPlayer.morale = Math.min(100, (renewingPlayer.morale || 80) + 10);
+      renewingPlayer.unhappy = false;
       await db.players.put(renewingPlayer);
 
       if (renewBonus > 0) {
@@ -75,31 +94,55 @@ export function Roster() {
         await db.teams.put(team);
       }
 
-      setRenewStatus({ type: 'accepted', msg: `¡Contrato renovado con éxito! ${renewingPlayer.name} extiende por ${renewYears} años a $${(renewSalary/1000000).toFixed(2)}M/año.` });
+      await db.transactions.add({
+        leagueId: league.id!,
+        type: 'sign',
+        playerId: renewingPlayer.id!,
+        fromTeamId: team.id!,
+        toTeamId: team.id!,
+        amount: renewSalary,
+        season: league.season,
+        week: league.currentWeek,
+        date: Date.now()
+      });
+
+      setRenewStatus({ type: 'accepted', msg: `¡Contrato renovado con éxito! ${renewingPlayer.name} extiende por ${renewYears} años a ${formatMoney(renewSalary)}/año.` });
       setPlayers([...players]);
     } else {
-      setRenewStatus({ type: 'rejected', msg: `El jugador considera insuficiente el salario ofrecido. Exige al menos $${(askingSalary/1000000).toFixed(2)}M/año.` });
+      setRenewStatus({ type: 'rejected', msg: `El jugador considera insuficiente el salario ofrecido. Exige al menos ${formatMoney(askingSalary)}/año acorde a su nivel (${renewingPlayer.overall} OVR).` });
     }
   };
 
   const [terminatingPlayer, setTerminatingPlayer] = useState<Player | null>(null);
 
   const executeTerminateContract = async () => {
-    if (!terminatingPlayer || !team) return;
+    if (!terminatingPlayer || !team || !league) return;
     const p = terminatingPlayer;
     const severanceFee = Math.round(p.contract * 0.5);
 
     if (team.budget < severanceFee) {
-      setRenewStatus({ type: 'rejected', msg: 'Presupuesto insuficiente para abonar la indemnización de rescisión.' });
+      alert('Presupuesto insuficiente para abonar la indemnización de rescisión.');
       return;
     }
 
     p.teamId = null;
     p.lineupStatus = 'reserve';
+    p.pitchPosition = undefined;
     await db.players.put(p);
 
     team.budget -= severanceFee;
     await db.teams.put(team);
+
+    await db.transactions.add({
+      leagueId: league.id!,
+      type: 'release',
+      playerId: p.id!,
+      fromTeamId: team.id!,
+      amount: severanceFee,
+      season: league.season,
+      week: league.currentWeek,
+      date: Date.now()
+    });
 
     setPlayers(players.filter(x => x.id !== p.id));
     setTerminatingPlayer(null);
@@ -123,7 +166,11 @@ export function Roster() {
     setSortConfig({ key, direction });
   };
 
-  const sortedPlayers = [...players].sort((a, b) => {
+  const seniorPlayers = players.filter(p => p.lineupStatus !== 'youth');
+  const youthPlayers = players.filter(p => p.lineupStatus === 'youth');
+  const filteredByTab = squadFilter === 'senior' ? seniorPlayers : squadFilter === 'youth' ? youthPlayers : players;
+
+  const sortedPlayers = [...filteredByTab].sort((a, b) => {
     let aVal: any = a[sortConfig.key];
     let bVal: any = b[sortConfig.key];
     if (sortConfig.key === 'stats') {
@@ -140,27 +187,57 @@ export function Roster() {
 
   return (
     <div className="page-content">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{marginBottom: 0}}>Plantilla Oficial</h1>
-          {team && <h3 style={{marginTop: 0, color: '#94a3b8'}}>{team.name} ({players.length} Jugadores)</h3>}
+          {team && (
+            <h3 style={{marginTop: 0, color: '#94a3b8'}}>
+              {team.name} • {seniorPlayers.length} Fichas Primer Equipo ({youthPlayers.length} en Filial)
+              {team.coach?.name ? ` • DT: ${team.coach.name}` : ''}
+            </h3>
+          )}
         </div>
 
-        {isUserTeam && team && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {[
+            { id: 'senior', label: `Primer Equipo (${seniorPlayers.length})` },
+            { id: 'youth', label: `Cantera / Filial (${youthPlayers.length})` },
+            { id: 'all', label: `Todos (${players.length})` }
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setSquadFilter(t.id as any)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: squadFilter === t.id ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                background: squadFilter === t.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.04)',
+                color: squadFilter === t.id ? '#38bdf8' : '#94a3b8',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {team && (
           <div className="glass-panel" style={{ padding: '0.6rem 1.2rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <div>
               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Presupuesto Fichajes:</span>
-              <strong style={{ display: 'block', color: '#10b981' }}>${(team.budget/1000000).toFixed(2)}M</strong>
+              <strong style={{ display: 'block', color: '#10b981' }}>{formatMoney(team.budget)}</strong>
             </div>
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Masa Salarial Anual:</span>
-              <strong style={{ display: 'block', color: '#38bdf8' }}>${(players.reduce((a,b)=>a+b.contract,0)/1000000).toFixed(2)}M/año</strong>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Masa Salarial Primer Equipo:</span>
+              <strong style={{ display: 'block', color: '#38bdf8' }}>{formatMoney(seniorPlayers.reduce((a,b)=>a+b.contract,0))}/año</strong>
             </div>
           </div>
         )}
       </div>
 
-      <div className="glass-panel" style={{marginTop: '1.5rem', overflow: 'hidden'}}>
+      <div className="glass-panel" style={{marginTop: '1.5rem', overflowX: 'auto'}}>
         <table className="table-container bb-table">
           <thead>
             <tr>
@@ -170,10 +247,12 @@ export function Roster() {
               <th onClick={() => handleSort('age')} style={{cursor: 'pointer'}}>Edad</th>
               <th onClick={() => handleSort('overall')} style={{cursor: 'pointer'}}>OVR</th>
               <th onClick={() => handleSort('potential')} style={{cursor: 'pointer'}}>POT</th>
-              <th onClick={() => handleSort('contract')} style={{cursor: 'pointer'}}>Salario Anual</th>
+              <th>Valor Mercado</th>
+              <th onClick={() => handleSort('contract')} style={{cursor: 'pointer'}}>Salario</th>
               <th>Contrato</th>
-              <th>Lista Traspaso</th>
-              {isUserTeam && <th>Acciones de Gestión</th>}
+              <th>Rol / Moral</th>
+              <th>Estado</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -190,29 +269,54 @@ export function Roster() {
                       {p.name}
                     </Link>
                     {p.isInjured && <span title={`Lesionado: ${p.injuryType || 'Desconocido'} (${p.injuryWeeks} sem)`} style={{marginLeft:'5px', fontSize: '1.1rem'}}>🏥</span>}
-                    {p.cards?.suspended && <span title="Suspendido (Roja)" style={{marginLeft:'5px', fontSize: '1.1rem'}}>🟥</span>}
+                    {p.cards?.suspended && <span title="Suspendido" style={{marginLeft:'5px', fontSize: '1.1rem'}}>🟥</span>}
+                    {p.isOnLoan && <span title="Cedido en préstamo" style={{marginLeft:'5px', fontSize: '0.72rem', color: '#fbbf24', fontWeight: 'bold'}}>🔄 Cedido</span>}
                   </div>
                 </td>
                 <td>{p.age}</td>
                 <td><strong>{p.overall}</strong></td>
-                <td>{p.potential}</td>
-                <td>${(p.contract / 1000000).toFixed(2)}M</td>
+                <td>{(isUserTeam || p.isScouted) ? p.potential : `${Math.max(50, p.potential - 4)}-${Math.min(99, p.potential + 4)}`}</td>
+                <td style={{ color: '#10b981', fontWeight: 600 }}>{formatMoney(calculatePlayerMarketValue(p))}</td>
+                <td>{formatMoney(p.contract)}</td>
                 <td>
                   <span style={{ color: (p.contractYears || 2) <= 1 ? '#ef4444' : '#10b981', fontWeight: 600 }}>
                     {p.contractYears ? `${p.contractYears} ${p.contractYears === 1 ? 'Año' : 'Años'}` : '2 Años'}
                   </span>
                 </td>
                 <td>
+                  {isUserTeam ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <select
+                        value={p.squadRole || (p.overall >= 85 ? 'Estrella' : p.overall >= 79 ? 'Titular' : p.age <= 20 ? 'Promesa' : 'Rotación')}
+                        onChange={e => handleRoleChange(p, e.target.value as any)}
+                        style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '4px', padding: '2px 4px', fontSize: '0.72rem' }}
+                      >
+                        <option value="Estrella">⭐ Estrella</option>
+                        <option value="Titular">🟢 Titular</option>
+                        <option value="Rotación">🔄 Rotación</option>
+                        <option value="Promesa">🌱 Promesa</option>
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: (p.morale || 80) >= 75 ? '#10b981' : (p.morale || 80) >= 45 ? '#f59e0b' : '#ef4444', fontWeight: 'bold' }}>
+                        {p.morale || 80}%
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                      {p.squadRole || (p.overall >= 85 ? 'Estrella' : 'Titular')} ({p.morale || 80}%)
+                    </span>
+                  )}
+                </td>
+                <td>
                   {p.isTransferListed ? (
-                    <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid #ef4444', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                    <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid #ef4444', padding: '2px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 'bold' }}>
                       Transferible
                     </span>
                   ) : (
-                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>No Transferible</span>
+                    <span style={{ color: '#64748b', fontSize: '0.72rem' }}>En Plantilla</span>
                   )}
                 </td>
-                {isUserTeam && (
-                  <td>
+                <td>
+                  {isUserTeam ? (
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         onClick={() => toggleTransferListed(p)}
@@ -242,8 +346,15 @@ export function Roster() {
                         Rescindir
                       </button>
                     </div>
-                  </td>
-                )}
+                  ) : (
+                    <button
+                      onClick={() => navigate(`/l/${leagueId}/trades?playerId=${p.id}`)}
+                      style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <ArrowLeftRight size={12} /> Negociar Fichaje
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -255,7 +366,7 @@ export function Roster() {
         <CustomModal
           isOpen={true}
           title="Rescisión de Contrato"
-          message={`¿Rescindir el contrato de ${terminatingPlayer.name}? Se abonará una indemnización de indemnización de $${((terminatingPlayer.contract * 0.5) / 1000000).toFixed(2)}M en efectivo.`}
+          message={`¿Rescindir el contrato de ${terminatingPlayer.name}? Se abonará una indemnización por despido de ${formatMoney(Math.round(terminatingPlayer.contract * 0.5))} en efectivo.`}
           confirmText="Sí, Rescindir Contrato"
           cancelText="Cancelar"
           type="danger"

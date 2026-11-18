@@ -571,6 +571,15 @@ export async function startNextSeason(leagueId: number) {
       if (userTeam.id === championsLeagueWinnerId) titlesWon.push('UEFA Champions League');
       if (userTeam.id === europaLeagueWinnerId) titlesWon.push('UEFA Europa League');
 
+      // Update manager reputation based on season finish & titles won
+      let repDelta = 0;
+      if (pos === 1) repDelta += 8;
+      else if (pos <= 4) repDelta += 4;
+      else if (pos >= domTeams.length - 3) repDelta -= 6;
+      repDelta += titlesWon.length * 4;
+      league.managerReputation = Math.max(25, Math.min(100, (league.managerReputation || 60) + repDelta));
+      await db.leagues.update(leagueId, { managerReputation: league.managerReputation });
+
       await db.gmHistory.add({
         leagueId: league.id!,
         season: league.season,

@@ -31,6 +31,7 @@ export function Schedule() {
   const getCompBadge = (type?: string) => {
     if (type === 'cup') return <span style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', border: '1px solid #c084fc', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>🏆 COPA</span>;
     if (type === 'continental') return <span style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: '1px solid #f59e0b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>🌟 CHAMPIONS</span>;
+    if (type === 'europa') return <span style={{ background: 'rgba(249, 115, 22, 0.2)', color: '#fb923c', border: '1px solid #fb923c', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>🛡️ EUROPA</span>;
     return <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>⚽ LIGA</span>;
   };
 

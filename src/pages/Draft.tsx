@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type Player, type League, type Team, getInitialPlayerStats } from '../db/db';
+import { db, type Player, type League, type Team, getInitialPlayerStats, getDetailedAttributes } from '../db/db';
 import { FileText, CheckCircle2, XCircle } from 'lucide-react';
 
 export function Draft() {
@@ -45,24 +45,55 @@ export function Draft() {
     const lastNames = ['García', 'Martínez', 'López', 'González', 'Pérez', 'Rodríguez', 'Sánchez', 'Ramírez', 'Cruz', 'Flores'];
     const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['POR', 'DEF', 'DEF', 'MED', 'MED', 'DEL'];
     
+    const specMap: Record<string, Player['specificPosition'][]> = {
+      POR: ['POR'],
+      DEF: ['DFC', 'LI', 'LD'],
+      MED: ['MCD', 'MC', 'MCO'],
+      DEL: ['DC', 'EI', 'ED']
+    };
+    const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Portugal', 'Uruguay', 'Colombia'];
     const newProspects: Player[] = [];
     for(let i=0; i<20; i++) {
-      const pot = 60 + Math.floor(Math.random() * 35);
+      const ovr = 56 + Math.floor(Math.random() * 14);
+      const pot = Math.min(95, Math.max(ovr + 10, 68 + Math.floor(Math.random() * 26)));
+      const pos = positions[Math.floor(Math.random()*positions.length)];
+      const specList = specMap[pos];
+      const spec = specList[Math.floor(Math.random() * specList.length)];
       const p: Player = {
         leagueId: lid,
         teamId: null,
         name: `${firstNames[Math.floor(Math.random()*firstNames.length)]} ${lastNames[Math.floor(Math.random()*lastNames.length)]}`,
         age: 16 + Math.floor(Math.random() * 3),
-        overall: 35 + Math.floor(Math.random() * 20),
+        overall: ovr,
         potential: pot,
-        position: positions[Math.floor(Math.random()*positions.length)],
+        position: pos,
+        specificPosition: spec,
         contract: 80000 + Math.floor(pot * 1500),
         contractYears: 3,
         contractEndSeason: year + 3,
         stats: getInitialPlayerStats(),
         isDraftProspect: true,
-        draftYear: year
+        draftYear: year,
+        personality: 'Ambicioso',
+        developmentType: 'early_bloomer',
+        attributes: {
+          pace: Math.min(92, ovr + 8 + Math.floor(Math.random() * 8)),
+          shooting: pos === 'DEL' ? ovr + 6 : ovr - 6,
+          passing: pos === 'MED' ? ovr + 6 : ovr - 4,
+          dribbling: ovr + 4,
+          defending: pos === 'DEF' ? ovr + 7 : 42,
+          physical: ovr + 2
+        },
+        bio: {
+          height: 170 + Math.floor(Math.random() * 20),
+          weight: 64 + Math.floor(Math.random() * 18),
+          country: countries[Math.floor(Math.random() * countries.length)],
+          preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+          weakFoot: 3,
+          skillMoves: 3
+        }
       };
+      p.detailedAttributes = getDetailedAttributes(p);
       newProspects.push(p);
     }
     

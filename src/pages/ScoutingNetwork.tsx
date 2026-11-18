@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { db, type ScoutMission, type Player, type Team, type League, getInitialPlayerStats } from '../db/db';
-import { Compass, Users, MapPin, CheckCircle, Clock, PlusCircle, Eye, Search, AlertCircle } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { db, type ScoutMission, type Player, type Team, type League, getInitialPlayerStats, getDetailedAttributes, formatMoney } from '../db/db';
+import { calculatePlayerMarketValue } from '../engine/valuationEngine';
+import { Compass, Users, MapPin, CheckCircle, Clock, PlusCircle, Eye, Search, AlertCircle, ArrowLeftRight } from 'lucide-react';
 
 export function ScoutingNetwork() {
   const { leagueId } = useParams();
+  const navigate = useNavigate();
   const [league, setLeague] = useState<League | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [missions, setMissions] = useState<ScoutMission[]>([]);
   const [scoutedPlayers, setScoutedPlayers] = useState<(Player & { isInDepthScouted?: boolean })[]>([]);
+  const [scoutedClubPlayers, setScoutedClubPlayers] = useState<(Player & { teamName?: string })[]>([]);
 
   const [selectedRegion, setSelectedRegion] = useState<'Sudamérica' | 'Europa' | 'África' | 'Asia'>('Sudamérica');
   const [scoutName, setScoutName] = useState('Ojeador Principal');
@@ -27,18 +30,37 @@ export function ScoutingNetwork() {
     }
 
     const m = await db.scoutMissions.where('leagueId').equals(lid).toArray();
-    
+    const completedDiscoveredIds = new Set<number>();
+
     // Check if active missions completed based on weeks
     for (const mission of m) {
       if (!mission.isCompleted && l.currentWeek >= mission.startWeek + mission.durationWeeks) {
         mission.isCompleted = true;
         await db.scoutMissions.put(mission);
       }
+      if (mission.isCompleted && mission.discoveredPlayerIds) {
+        mission.discoveredPlayerIds.forEach(pid => completedDiscoveredIds.add(pid));
+      }
     }
     setMissions(m);
 
-    const sPlayers = await db.players.where('leagueId').equals(lid).filter(p => p.isScouted === true).toArray();
-    setScoutedPlayers(sPlayers);
+    const [sPlayers, allTeams] = await Promise.all([
+      db.players.where('leagueId').equals(lid).filter(p => p.isScouted === true).toArray(),
+      db.teams.where('leagueId').equals(lid).toArray()
+    ]);
+    const teamMap = new Map<number, string>(allTeams.map(t => [t.id!, t.name]));
+
+    // Only show unattached prospects discovered by COMPLETED missions (or legacy unattached scouted prospects not in an active mission)
+    const pendingMissionPlayerIds = new Set<number>();
+    m.filter(mi => !mi.isCompleted).forEach(mi => mi.discoveredPlayerIds?.forEach(pid => pendingMissionPlayerIds.add(pid)));
+
+    const unattachedProspects = sPlayers.filter(p => !p.teamId && !pendingMissionPlayerIds.has(p.id!));
+    setScoutedPlayers(unattachedProspects);
+
+    const clubScouted = sPlayers
+      .filter(p => p.teamId && p.teamId !== l.userTeamId)
+      .map(p => ({ ...p, teamName: p.teamId ? teamMap.get(p.teamId) : 'Club' }));
+    setScoutedClubPlayers(clubScouted);
   };
 
   useEffect(() => {
@@ -75,35 +97,62 @@ export function ScoutingNetwork() {
     const lastNames = ['Silva', 'Santos', 'Fernández', 'Diallo', 'Takahashi', 'Traoré', 'Gómez', 'Mendes', 'Nakamura'];
     const positions: ('POR' | 'DEF' | 'MED' | 'DEL')[] = ['DEF', 'MED', 'DEL', 'POR'];
 
+    const regionCountries: Record<string, string[]> = {
+      'Sudamérica': ['Brasil', 'Argentina', 'Uruguay', 'Colombia'],
+      'Europa': ['España', 'Francia', 'Portugal', 'Alemania', 'Italia'],
+      'África': ['Senegal', 'Nigeria', 'Marruecos', 'Costa de Marfil'],
+      'Asia': ['Japón', 'Corea del Sur']
+    };
+    const specMap: Record<string, Player['specificPosition'][]> = {
+      POR: ['POR'],
+      DEF: ['DFC', 'LI', 'LD'],
+      MED: ['MCD', 'MC', 'MCO'],
+      DEL: ['DC', 'EI', 'ED']
+    };
     const newProspects: Player[] = [];
     for (let i = 0; i < 3; i++) {
-      const ovr = Math.floor(58 + Math.random() * 18);
-      const pot = Math.min(99, ovr + Math.floor(12 + Math.random() * 22));
-      newProspects.push({
+      const ovr = Math.floor(60 + Math.random() * 16);
+      const pot = Math.min(96, ovr + Math.floor(13 + Math.random() * 20));
+      const pos = positions[Math.floor(Math.random() * positions.length)];
+      const specList = specMap[pos];
+      const spec = specList[Math.floor(Math.random() * specList.length)];
+      const countryList = regionCountries[selectedRegion] || ['Brasil'];
+      const country = countryList[Math.floor(Math.random() * countryList.length)];
+      const pObj: Player = {
         leagueId: league.id!,
         teamId: null,
         name: `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`,
         age: 16 + Math.floor(Math.random() * 4),
         overall: ovr,
         potential: pot,
-        position: positions[Math.floor(Math.random() * positions.length)],
+        position: pos,
+        specificPosition: spec,
         contract: 300000,
+        contractYears: 3,
+        contractEndSeason: league.season + 3,
         stats: getInitialPlayerStats(),
         isScouted: true,
+        personality: 'Ambicioso',
+        developmentType: 'early_bloomer',
         attributes: {
-          pace: Math.floor(55 + Math.random() * 38),
-          shooting: Math.floor(45 + Math.random() * 45),
-          passing: Math.floor(50 + Math.random() * 40),
-          dribbling: Math.floor(55 + Math.random() * 38),
-          defending: Math.floor(40 + Math.random() * 45),
-          physical: Math.floor(50 + Math.random() * 40)
+          pace: Math.floor(60 + Math.random() * 32),
+          shooting: Math.floor(50 + Math.random() * 38),
+          passing: Math.floor(55 + Math.random() * 35),
+          dribbling: Math.floor(60 + Math.random() * 32),
+          defending: Math.floor(42 + Math.random() * 42),
+          physical: Math.floor(55 + Math.random() * 32)
         },
         bio: {
-          height: 175 + Math.floor(Math.random() * 15),
-          weight: 70 + Math.floor(Math.random() * 15),
-          country: selectedRegion
+          height: 173 + Math.floor(Math.random() * 17),
+          weight: 67 + Math.floor(Math.random() * 16),
+          country,
+          preferredFoot: Math.random() < 0.25 ? 'Left' : 'Right',
+          weakFoot: 3 + Math.floor(Math.random() * 2),
+          skillMoves: 3 + Math.floor(Math.random() * 2)
         }
-      });
+      };
+      pObj.detailedAttributes = getDetailedAttributes(pObj);
+      newProspects.push(pObj);
     }
 
     const pIds = await db.players.bulkAdd(newProspects, { allKeys: true }) as number[];
@@ -280,11 +329,60 @@ export function ScoutingNetwork() {
               );
             })}
             {scoutedPlayers.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>No hay jugadores ojeados pendientes de fichar.</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>No hay promesas libres descubiertas aún (las misiones activas revelarán sus jugadores al completarse).</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Scouted Players from Other Clubs */}
+      {scoutedClubPlayers.length > 0 && (
+        <div style={{ marginTop: '2.5rem' }}>
+          <h2><Eye size={20} color="#38bdf8" /> Informes de Jugadores Ojeados en Otros Clubes</h2>
+          <div className="standings-content" style={{ overflowX: 'auto', marginTop: '1rem' }}>
+            <table className="table-container bb-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Club Actual</th>
+                  <th>Pos</th>
+                  <th>Edad</th>
+                  <th>OVR</th>
+                  <th>POT Verificado</th>
+                  <th>Valor de Mercado</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoutedClubPlayers.map(p => (
+                  <tr key={p.id}>
+                    <td>
+                      <Link to={`/l/${leagueId}/player/${p.id}`} style={{ fontWeight: 'bold', color: '#38bdf8', textDecoration: 'none' }}>
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td>{p.teamName}</td>
+                    <td style={{ color: '#38bdf8', fontWeight: 'bold' }}>{p.specificPosition || p.position}</td>
+                    <td>{p.age}</td>
+                    <td><strong>{p.overall}</strong></td>
+                    <td><span style={{ color: '#10b981', fontWeight: 'bold' }}>{p.potential}</span></td>
+                    <td>{formatMoney(calculatePlayerMarketValue(p))}</td>
+                    <td>
+                      <button
+                        className="tm-btn-primary"
+                        onClick={() => navigate(`/l/${leagueId}/trades?playerId=${p.id}`)}
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem', background: '#0284c7' }}
+                      >
+                        <ArrowLeftRight size={12} /> Negociar con Club
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

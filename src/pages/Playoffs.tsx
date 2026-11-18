@@ -1,17 +1,33 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Team, type Match } from '../db/db';
-import { OFFLINE_CLUBS } from '../services/transfermarktData';
-import { Trophy, Globe, Award, CheckCircle, Flame } from 'lucide-react';
+import { Trophy, Globe, Award, CheckCircle, Flame, Shield } from 'lucide-react';
 import './Playoffs.css';
+
+interface CompTeamRow {
+  id: number;
+  name: string;
+  overall: number;
+  country: string;
+  pts: number;
+  gd: number;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  gf: number;
+  ga: number;
+}
 
 export function Playoffs() {
   const { leagueId } = useParams();
-  const [championsTeams, setChampionsTeams] = useState<{ id: string | number; name: string; overall: number; country: string; pts: number; gd: number; played: number; wins: number; draws: number; losses: number; gf: number; ga: number }[]>([]);
+  const [championsTeams, setChampionsTeams] = useState<CompTeamRow[]>([]);
+  const [europaTeams, setEuropaTeams] = useState<CompTeamRow[]>([]);
   const [cupMatches, setCupMatches] = useState<Match[]>([]);
   const [clKnockoutMatches, setClKnockoutMatches] = useState<Match[]>([]);
+  const [elKnockoutMatches, setElKnockoutMatches] = useState<Match[]>([]);
   const [teamsMap, setTeamsMap] = useState<Map<number, Team>>(new Map());
-  const [activeTab, setActiveTab] = useState<'champions' | 'cup'>('champions');
+  const [activeTab, setActiveTab] = useState<'champions' | 'europa' | 'cup'>('champions');
 
   useEffect(() => {
     async function load() {
@@ -23,72 +39,92 @@ export function Playoffs() {
       localTeams.forEach(t => tMap.set(t.id!, t));
       setTeamsMap(tMap);
 
-      const playedChampMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'continental' && m.isPlayed).toArray();
+      const allClMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'continental').toArray();
+      const allElMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'europa').toArray();
       const allCup = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'cup').toArray();
-      const allClKnockouts = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'continental' && m.week >= 31).toArray();
-      
+
       setCupMatches(allCup);
-      setClKnockoutMatches(allClKnockouts);
+      setClKnockoutMatches(allClMatches.filter(m => m.week >= 31));
+      setElKnockoutMatches(allElMatches.filter(m => m.week >= 31));
 
-      const statsMap = new Map<number, { pts: number; gf: number; ga: number; played: number; wins: number; draws: number; losses: number }>();
-      localTeams.forEach(t => {
-        statsMap.set(t.id!, { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 });
-      });
+      const buildTable = (compMatches: Match[]) => {
+        const leaguePhaseMatches = compMatches.filter(m => m.week < 31);
+        const participantIds = new Set<number>();
+        leaguePhaseMatches.forEach(m => {
+          participantIds.add(m.homeTeamId);
+          participantIds.add(m.awayTeamId);
+        });
 
-      playedChampMatches.forEach(m => {
-        const homeStats = statsMap.get(m.homeTeamId) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
-        const awayStats = statsMap.get(m.awayTeamId) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
+        const statsMap = new Map<number, { pts: number; gf: number; ga: number; played: number; wins: number; draws: number; losses: number }>();
+        participantIds.forEach(tid => {
+          statsMap.set(tid, { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 });
+        });
 
-        homeStats.played++;
-        awayStats.played++;
-        homeStats.gf += m.homeScore;
-        homeStats.ga += m.awayScore;
-        awayStats.gf += m.awayScore;
-        awayStats.ga += m.homeScore;
+        leaguePhaseMatches.filter(m => m.isPlayed).forEach(m => {
+          const homeStats = statsMap.get(m.homeTeamId) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
+          const awayStats = statsMap.get(m.awayTeamId) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
 
-        if (m.homeScore > m.awayScore) {
-          homeStats.pts += 3;
-          homeStats.wins++;
-          awayStats.losses++;
-        } else if (m.awayScore > m.homeScore) {
-          awayStats.pts += 3;
-          awayStats.wins++;
-          homeStats.losses++;
-        } else {
-          homeStats.pts += 1;
-          awayStats.pts += 1;
-          homeStats.draws++;
-          awayStats.draws++;
-        }
+          homeStats.played++;
+          awayStats.played++;
+          homeStats.gf += m.homeScore;
+          homeStats.ga += m.awayScore;
+          awayStats.gf += m.awayScore;
+          awayStats.ga += m.homeScore;
 
-        statsMap.set(m.homeTeamId, homeStats);
-        statsMap.set(m.awayTeamId, awayStats);
-      });
+          if (m.homeScore > m.awayScore) {
+            homeStats.pts += 3;
+            homeStats.wins++;
+            awayStats.losses++;
+          } else if (m.awayScore > m.homeScore) {
+            awayStats.pts += 3;
+            awayStats.wins++;
+            homeStats.losses++;
+          } else {
+            homeStats.pts += 1;
+            awayStats.pts += 1;
+            homeStats.draws++;
+            awayStats.draws++;
+          }
 
-      const clList: { id: string | number; name: string; overall: number; country: string; pts: number; gd: number; played: number; wins: number; draws: number; losses: number; gf: number; ga: number }[] = [];
+          statsMap.set(m.homeTeamId, homeStats);
+          statsMap.set(m.awayTeamId, awayStats);
+        });
 
-      localTeams.forEach((t) => {
-        const st = statsMap.get(t.id!) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
-        const gd = st.gf - st.ga;
-        clList.push({ id: t.id!, name: t.name, overall: t.overall, country: t.domesticLeague || 'Local', pts: st.pts, gd, played: st.played, wins: st.wins, draws: st.draws, losses: st.losses, gf: st.gf, ga: st.ga });
-      });
+        const rows: CompTeamRow[] = [];
+        const targetTeams = participantIds.size > 0
+          ? localTeams.filter(t => participantIds.has(t.id!))
+          : localTeams;
 
-      OFFLINE_CLUBS.forEach((c, i) => {
-        if (!clList.find(x => x.name.toLowerCase().includes(c.name.toLowerCase()))) {
-          const ovr = c.marketValue >= 1_000_000_000 ? 88 : (c.marketValue >= 600_000_000 ? 84 : 79);
-          const pts = Math.max(0, 16 - i * 2);
-          const gd = Math.max(-5, 10 - i * 2);
-          clList.push({ id: c.id, name: c.name, overall: ovr, country: c.country, pts, gd, played: 6, wins: Math.floor(pts / 3), draws: pts % 3, losses: Math.max(0, 6 - Math.floor(pts / 3)), gf: Math.max(0, 10 + gd), ga: 10 });
-        }
-      });
+        targetTeams.forEach(t => {
+          const st = statsMap.get(t.id!) || { pts: 0, gf: 0, ga: 0, played: 0, wins: 0, draws: 0, losses: 0 };
+          const gd = st.gf - st.ga;
+          rows.push({
+            id: t.id!,
+            name: t.name,
+            overall: t.overall,
+            country: t.domesticLeague || 'Local',
+            pts: st.pts,
+            gd,
+            played: st.played,
+            wins: st.wins,
+            draws: st.draws,
+            losses: st.losses,
+            gf: st.gf,
+            ga: st.ga
+          });
+        });
 
-      clList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.overall - a.overall);
-      setChampionsTeams(clList.slice(0, 36));
+        rows.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.overall - a.overall);
+        return rows;
+      };
+
+      setChampionsTeams(buildTable(allClMatches));
+      setEuropaTeams(buildTable(allElMatches));
     }
     load();
   }, [leagueId]);
 
-  const getTeamName = (id: number) => teamsMap.get(id)?.name || championsTeams.find(c => c.id === id)?.name || `Equipo #${id}`;
+  const getTeamName = (id: number) => teamsMap.get(id)?.name || `Equipo #${id}`;
 
   const getStageName = (week: number) => {
     if (week <= 8) return '16avos de Final';
@@ -98,17 +134,19 @@ export function Playoffs() {
     return 'Gran Final de Copa';
   };
 
-  const octavosClMatches = clKnockoutMatches.filter(m => m.week === 31);
-  const cuartosClMatches = clKnockoutMatches.filter(m => m.week === 33);
-  const semisClMatches = clKnockoutMatches.filter(m => m.week === 35);
-  const finalClMatches = clKnockoutMatches.filter(m => m.week === 38);
+  const activeTable = activeTab === 'europa' ? europaTeams : championsTeams;
+  const activeKnockouts = activeTab === 'europa' ? elKnockoutMatches : clKnockoutMatches;
+  const octavosMatches = activeKnockouts.filter(m => m.week === 31);
+  const cuartosMatches = activeKnockouts.filter(m => m.week === 33);
+  const semisMatches = activeKnockouts.filter(m => m.week === 35);
+  const finalMatches = activeKnockouts.filter(m => m.week === 38);
 
   return (
     <div className="page-container playoffs-page">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1>Competiciones Internacionales & Copas Nacionales</h1>
-          <p style={{ color: '#94a3b8', margin: 0 }}>Formato oficial de Champions League (Fase de Liga de 36 Equipos + Eliminatorias) y Copa Nacional del Rey / FA Cup.</p>
+          <p style={{ color: '#94a3b8', margin: 0 }}>Formato oficial UEFA Champions League, UEFA Europa League y Copa Nacional.</p>
         </div>
       </div>
 
@@ -118,7 +156,13 @@ export function Playoffs() {
           className={`tm-tab ${activeTab === 'champions' ? 'active' : ''}`}
           onClick={() => setActiveTab('champions')}
         >
-          <Globe size={16} /> UEFA Champions League (Fase de Liga Real)
+          <Globe size={16} /> UEFA Champions League
+        </button>
+        <button
+          className={`tm-tab ${activeTab === 'europa' ? 'active' : ''}`}
+          onClick={() => setActiveTab('europa')}
+        >
+          <Shield size={16} /> UEFA Europa League
         </button>
         <button
           className={`tm-tab ${activeTab === 'cup' ? 'active' : ''}`}
@@ -128,25 +172,25 @@ export function Playoffs() {
         </button>
       </div>
 
-      {activeTab === 'champions' ? (
+      {(activeTab === 'champions' || activeTab === 'europa') ? (
         <div className="champions-container">
           {/* Header Trophy Banner */}
           <div className="glass-panel comp-banner">
-            <Award size={36} color="#eab308" />
+            <Award size={36} color={activeTab === 'champions' ? '#eab308' : '#f97316'} />
             <div>
-              <h3>UEFA Champions League • Temporada Real 2026/27</h3>
-              <p>Fase de Liga Única de 36 Clubes. Los 8 primeros clasifican directo a Octavos; del 9 al 24 juegan Playoffs Play-in.</p>
+              <h3>{activeTab === 'champions' ? 'UEFA Champions League' : 'UEFA Europa League'} • Fase de Liga + Eliminatorias</h3>
+              <p>Los mejores clasificados avanzan a las rondas de eliminación directa (Semanas 31, 33, 35 y Gran Final en Semana 38).</p>
             </div>
             <div className="prize-badge">
               <span>Premio Campeón</span>
-              <strong>€85,000,000</strong>
+              <strong>{activeTab === 'champions' ? '€50,000,000' : '€20,000,000'}</strong>
             </div>
           </div>
 
           {/* Phase 1: League Phase Table */}
           <div className="champions-grid" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '1.5rem' }}>
             <div className="glass-panel league-phase-card">
-              <h3>Tabla de Posiciones Fase de Liga de Champions</h3>
+              <h3>Tabla de Posiciones Fase de Liga ({activeTable.length} Clubes)</h3>
               <div className="table-responsive" style={{ maxHeight: '460px', overflowY: 'auto' }}>
                 <table className="dash-table">
                   <thead>
@@ -163,10 +207,10 @@ export function Playoffs() {
                     </tr>
                   </thead>
                   <tbody>
-                    {championsTeams.map((tm, idx) => (
-                      <tr key={tm.id || idx} style={{ background: idx < 8 ? 'rgba(234, 179, 8, 0.06)' : idx < 24 ? 'rgba(56, 189, 248, 0.04)' : 'transparent' }}>
-                        <td style={{ color: idx < 8 ? '#eab308' : idx < 24 ? '#38bdf8' : '#94a3b8', fontWeight: 'bold' }}>{idx + 1}</td>
-                        <td><strong>{tm.name}</strong> <small style={{ color: '#94a3b8' }}>({tm.country.replace(' FC', '')})</small></td>
+                    {activeTable.map((tm, idx) => (
+                      <tr key={tm.id || idx} style={{ background: idx < 8 ? 'rgba(234, 179, 8, 0.06)' : idx < 16 ? 'rgba(56, 189, 248, 0.04)' : 'transparent' }}>
+                        <td style={{ color: idx < 8 ? '#eab308' : idx < 16 ? '#38bdf8' : '#94a3b8', fontWeight: 'bold' }}>{idx + 1}</td>
+                        <td><strong>{tm.name}</strong> <small style={{ color: '#94a3b8' }}>({tm.country})</small></td>
                         <td>{tm.played}</td>
                         <td>{tm.wins}</td>
                         <td>{tm.draws}</td>
@@ -175,9 +219,9 @@ export function Playoffs() {
                         <td style={{ color: '#eab308', fontWeight: 'bold' }}>{tm.pts}</td>
                         <td>
                           {idx < 8 ? (
-                            <span className="status-badge-green"><CheckCircle size={12} /> Octavos Directo</span>
-                          ) : idx < 24 ? (
-                            <span className="status-badge-blue">Playoffs Play-in</span>
+                            <span className="status-badge-green"><CheckCircle size={12} /> Zona Clasificación</span>
+                          ) : idx < 16 ? (
+                            <span className="status-badge-blue">Zona Play-in</span>
                           ) : (
                             <span style={{ color: '#64748b', fontSize: '0.75rem' }}>Eliminado</span>
                           )}
@@ -195,8 +239,8 @@ export function Playoffs() {
               <div className="bracket-tree" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div className="bracket-round">
                   <h4 style={{ color: '#38bdf8', margin: '0 0 0.5rem 0' }}>🏆 Octavos de Final (Semana 31)</h4>
-                  {octavosClMatches.length > 0 ? (
-                    octavosClMatches.map(m => (
+                  {octavosMatches.length > 0 ? (
+                    octavosMatches.map(m => (
                       <div key={m.id} className="bracket-match" style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '4px' }}>
                         <span style={{ fontWeight: m.isPlayed && m.homeScore > m.awayScore ? 'bold' : 'normal', color: m.isPlayed && m.homeScore > m.awayScore ? '#10b981' : '#f8fafc' }}>
                           {getTeamName(m.homeTeamId)}
@@ -216,8 +260,8 @@ export function Playoffs() {
 
                 <div className="bracket-round">
                   <h4 style={{ color: '#f59e0b', margin: '0 0 0.5rem 0' }}>🔥 Cuartos & Semifinales (Semanas 33 - 35)</h4>
-                  {[...cuartosClMatches, ...semisClMatches].length > 0 ? (
-                    [...cuartosClMatches, ...semisClMatches].map(m => (
+                  {[...cuartosMatches, ...semisMatches].length > 0 ? (
+                    [...cuartosMatches, ...semisMatches].map(m => (
                       <div key={m.id} className="bracket-match" style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '4px' }}>
                         <span>{getTeamName(m.homeTeamId)}</span>
                         <strong style={{ color: '#f59e0b' }}>{m.isPlayed ? `${m.homeScore} - ${m.awayScore}` : 'vs'}</strong>
@@ -225,21 +269,21 @@ export function Playoffs() {
                       </div>
                     ))
                   ) : (
-                    <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Se disputan progresivamente tras los Octavos</div>
+                    <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Se disputan en Semanas 33 y 35</div>
                   )}
                 </div>
 
                 <div className="bracket-round" style={{ background: 'rgba(234, 179, 8, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid #eab308' }}>
                   <h4 style={{ color: '#eab308', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Flame size={18} /> Gran Final de UEFA Champions League (Semana 38)
+                    <Flame size={18} /> Gran Final {activeTab === 'champions' ? 'UEFA Champions League' : 'UEFA Europa League'} (Semana 38)
                   </h4>
-                  {finalClMatches.length > 0 && finalClMatches[0].isPlayed ? (
+                  {finalMatches.length > 0 && finalMatches[0].isPlayed ? (
                     <div style={{ marginTop: '0.5rem', fontWeight: 'bold', color: '#10b981', fontSize: '1rem' }}>
-                      🏆 Campeón: {getTeamName(finalClMatches[0].homeScore > finalClMatches[0].awayScore ? finalClMatches[0].homeTeamId : finalClMatches[0].awayTeamId)} ({finalClMatches[0].homeScore} - {finalClMatches[0].awayScore})
+                      🏆 Campeón: {getTeamName(finalMatches[0].homeScore >= finalMatches[0].awayScore ? finalMatches[0].homeTeamId : finalMatches[0].awayTeamId)} ({finalMatches[0].homeScore} - {finalMatches[0].awayScore})
                     </div>
                   ) : (
                     <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: '#f1f5f9' }}>
-                      Semana 38 • Estadio Wembley / Santiago Bernabéu
+                      Semana 38 • Sede Neutral Europea
                     </p>
                   )}
                 </div>

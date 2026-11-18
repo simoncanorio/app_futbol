@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { db, type Player, type Team, type League } from '../db/db';
+import { useParams, Link } from 'react-router-dom';
+import { db, type Player, type Team, type League, getSpecificPosition, formatMoney } from '../db/db';
+import { PlayerAvatar } from '../components/common/PlayerAvatar';
 
 export function PlayerBios() {
   const { leagueId } = useParams();
@@ -47,15 +48,16 @@ export function PlayerBios() {
         <table className="table-container bb-table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Nombre</th>
               <th>Pos</th>
-              <th>Team</th>
-              <th>Age</th>
-              <th>Height</th>
-              <th>Weight</th>
-              <th>Contract</th>
-              <th>Country</th>
-              <th>Draft/Recruited</th>
+              <th>Club</th>
+              <th>Edad</th>
+              <th>Altura</th>
+              <th>Peso</th>
+              <th>Pie / PM / Filig.</th>
+              <th>Salario</th>
+              <th>País</th>
+              <th>PlayStyles</th>
             </tr>
           </thead>
           <tbody>
@@ -63,15 +65,25 @@ export function PlayerBios() {
               const isMyTeam = league && p.teamId === league.userTeamId;
               return (
                 <tr key={p.id}>
-                  <td style={{fontWeight: 'bold', color: isMyTeam ? '#3b82f6' : '#e67e22'}}>{p.name}</td>
-                  <td>{p.position}</td>
+                  <td style={{fontWeight: 'bold'}}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <PlayerAvatar player={p} size={24} />
+                      <Link to={`/l/${leagueId}/player/${p.id}`} style={{color: isMyTeam ? '#3b82f6' : '#e67e22', textDecoration: 'none'}}>
+                        {p.name}
+                      </Link>
+                    </div>
+                  </td>
+                  <td>{getSpecificPosition(p)}</td>
                   <td>{p.teamObj?.name.substring(0,3).toUpperCase() || 'FA'}</td>
                   <td>{p.age}</td>
                   <td>{p.bio?.height ? `${p.bio.height} cm` : '-'}</td>
                   <td>{p.bio?.weight ? `${p.bio.weight} kg` : '-'}</td>
-                  <td>${(p.contract / 1000000).toFixed(2)}M</td>
+                  <td>{p.bio?.preferredFoot === 'Left' ? 'Izq' : 'Der'} ({p.bio?.weakFoot || 3}★ / {p.bio?.skillMoves || 3}★)</td>
+                  <td>{formatMoney(p.contract)}</td>
                   <td>{p.bio?.country || '-'}</td>
-                  <td>{p.recruitedYear || p.draftYear || '-'}</td>
+                  <td style={{ fontSize: '0.72rem', color: '#7dd3fc' }}>
+                    {p.playStyles && p.playStyles.length > 0 ? p.playStyles.slice(0, 3).join(', ') : '-'}
+                  </td>
                 </tr>
               )
             })}

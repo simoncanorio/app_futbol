@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, type League, type Team, type Player } from '../db/db';
 import { startNextSeason } from '../engine/gameLoop';
+import { sortStandingsWithTiebreakers } from '../utils/standingsUtils';
 import { Trophy, Award, Shield, CheckCircle, AlertTriangle, ArrowRight, Play, Loader } from 'lucide-react';
 import './SeasonSummary.css';
 
@@ -13,6 +14,7 @@ export function SeasonSummary() {
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [standings, setStandings] = useState<Team[]>([]);
   const [clChampionName, setClChampionName] = useState<string>('');
+  const [elChampionName, setElChampionName] = useState<string>('');
   const [cupChampionName, setCupChampionName] = useState<string>('');
   const [topScorer, setTopScorer] = useState<Player | null>(null);
   const [topAssister, setTopAssister] = useState<Player | null>(null);
@@ -29,29 +31,41 @@ export function SeasonSummary() {
 
       const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
       const teamMap = new Map(allTeams.map(t => [t.id!, t]));
-      allTeams.sort((a, b) => {
-        const ptsA = a.wins * 3 + a.draws;
-        const ptsB = b.wins * 3 + b.draws;
-        const gdA = a.goalsFor - a.goalsAgainst;
-        const gdB = b.goalsFor - b.goalsAgainst;
-        return ptsB - ptsA || gdB - gdA;
-      });
-      setStandings(allTeams);
+      const uTeam = l.userTeamId ? allTeams.find(t => t.id === l.userTeamId) : allTeams[0];
+      setUserTeam(uTeam || null);
 
-      if (l.userTeamId) {
-        const uTeam = allTeams.find(t => t.id === l.userTeamId);
-        setUserTeam(uTeam || null);
-      }
+      const playedLeagueMatches = await db.matches
+        .where('leagueId')
+        .equals(lid)
+        .filter(m => m.type === 'league' && m.isPlayed)
+        .toArray();
 
-      // Fetch actual Champions League & Cup winners from played matches
+      const domName = uTeam?.domesticLeague || 'LaLiga';
+      const domTeams = allTeams.filter(t => (t.domesticLeague || 'LaLiga') === domName);
+      const sorted = sortStandingsWithTiebreakers(
+        domTeams.length > 0 ? domTeams : allTeams,
+        playedLeagueMatches,
+        domName
+      );
+      setStandings(sorted);
+
+      // Fetch actual Champions League, Europa League & Cup winners from played matches
       const clMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'continental' && m.isPlayed).toArray();
       if (clMatches.length > 0) {
         clMatches.sort((a, b) => b.week - a.week);
         const finalCl = clMatches[0];
         const winId = finalCl.homeScore >= finalCl.awayScore ? finalCl.homeTeamId : finalCl.awayTeamId;
-        setClChampionName(teamMap.get(winId)?.name || allTeams[0]?.name || 'Real Madrid');
+        setClChampionName(teamMap.get(winId)?.name || sorted[0]?.name || 'Real Madrid');
       } else {
-        setClChampionName(allTeams[0]?.name || 'Real Madrid');
+        setClChampionName(sorted[0]?.name || 'Real Madrid');
+      }
+
+      const elMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'europa' && m.isPlayed).toArray();
+      if (elMatches.length > 0) {
+        elMatches.sort((a, b) => b.week - a.week);
+        const finalEl = elMatches[0];
+        const winId = finalEl.homeScore >= finalEl.awayScore ? finalEl.homeTeamId : finalEl.awayTeamId;
+        setElChampionName(teamMap.get(winId)?.name || sorted[4]?.name || 'Athletic Club');
       }
 
       const cupMatches = await db.matches.where('leagueId').equals(lid).filter(m => m.type === 'cup' && m.isPlayed).toArray();
@@ -59,9 +73,9 @@ export function SeasonSummary() {
         cupMatches.sort((a, b) => b.week - a.week);
         const finalCup = cupMatches[0];
         const winId = finalCup.homeScore >= finalCup.awayScore ? finalCup.homeTeamId : finalCup.awayTeamId;
-        setCupChampionName(teamMap.get(winId)?.name || allTeams[1]?.name || 'FC Barcelona');
+        setCupChampionName(teamMap.get(winId)?.name || sorted[1]?.name || 'FC Barcelona');
       } else {
-        setCupChampionName(allTeams[1]?.name || 'FC Barcelona');
+        setCupChampionName(sorted[1]?.name || 'FC Barcelona');
       }
 
       // Fetch top scorer & assister across the league
@@ -82,7 +96,7 @@ export function SeasonSummary() {
     setIsAdvancing(true);
     try {
       await startNextSeason(Number(leagueId));
-      window.location.href = `/l/${leagueId}/daily_schedule`;
+      navigate(`/l/${leagueId}/daily_schedule`);
     } catch (err) {
       console.error(err);
       alert('Error al avanzar de temporada.');
@@ -176,7 +190,7 @@ export function SeasonSummary() {
             <Trophy size={32} color="#38bdf8" />
             <span className="award-title" style={{ color: '#38bdf8' }}>Campeón Champions League</span>
             <strong>{clChampionName}</strong>
-            <small>Rey de Europa (+5 Prestigio)</small>
+            <small>Rey de Europa {elChampionName ? `• UEL: ${elChampionName}` : '(+5 Prestigio)'}</small>
           </div>
 
           {/* Copa Champion */}

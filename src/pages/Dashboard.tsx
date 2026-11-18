@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { db, type League, type Team, type Player, type Match } from '../db/db';
+import { db, type League, type Team, type Player, type Match, type Note, type TransferOffer, formatMoney, getSpecificPosition } from '../db/db';
 import { Shield, Trophy, TrendingUp, DollarSign, Users, Award, Calendar, ArrowRight, Activity, Heart, Play } from 'lucide-react';
 import { LiveMatchEngine } from '../components/match/LiveMatchEngine';
 import { advanceWeek } from '../engine/gameLoop';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
+import { sortStandingsWithTiebreakers } from '../utils/standingsUtils';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './Dashboard.css';
 
@@ -14,6 +15,9 @@ export function Dashboard() {
   const [team, setTeam] = useState<Team | null>(null);
   const [standings, setStandings] = useState<Team[]>([]);
   const [starters, setStarters] = useState<Player[]>([]);
+  const [squadPlayers, setSquadPlayers] = useState<Player[]>([]);
+  const [recentNotes, setRecentNotes] = useState<Note[]>([]);
+  const [pendingOffers, setPendingOffers] = useState<TransferOffer[]>([]);
   const [nextMatch, setNextMatch] = useState<{ match: Match; opponent: Team } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLivePlaying, setIsLivePlaying] = useState(false);
@@ -32,18 +36,43 @@ export function Dashboard() {
         setTeam(t!);
 
         const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
-        allTeams.sort((a, b) => {
-          const ptsA = a.wins * 3 + a.draws;
-          const ptsB = b.wins * 3 + b.draws;
-          const gdA = a.goalsFor - a.goalsAgainst;
-          const gdB = b.goalsFor - b.goalsAgainst;
-          return ptsB - ptsA || gdB - gdA || b.goalsFor - a.goalsFor;
-        });
-        setStandings(allTeams);
+        const playedLeagueMatches = await db.matches
+          .where('leagueId')
+          .equals(lid)
+          .filter(m => m.type === 'league' && m.isPlayed)
+          .toArray();
+
+        const domLeague = t?.domesticLeague || 'LaLiga';
+        const domTeams = allTeams.filter(tm => (tm.domesticLeague || 'LaLiga') === domLeague);
+        const sortedStandings = sortStandingsWithTiebreakers(
+          domTeams.length > 0 ? domTeams : allTeams,
+          playedLeagueMatches,
+          domLeague
+        );
+        setStandings(sortedStandings);
 
         const players = await db.players.where('teamId').equals(l.userTeamId).toArray();
-        players.sort((a, b) => b.overall - a.overall);
-        setStarters(players.slice(0, 11));
+        const seniorPlayers = players.filter(p => p.lineupStatus !== 'youth');
+        setSquadPlayers(seniorPlayers.length > 0 ? seniorPlayers : players);
+
+        const actualStarters = players.filter(p => p.lineupStatus === 'starter');
+        if (actualStarters.length >= 11) {
+          setStarters(actualStarters.slice(0, 11));
+        } else {
+          const sortedByOvr = [...seniorPlayers].sort((a, b) => b.overall - a.overall);
+          setStarters(sortedByOvr.slice(0, 11));
+        }
+
+        // Load latest notes and pending AI transfer offers
+        const notesList = await db.notes.where('leagueId').equals(lid).reverse().limit(4).toArray();
+        setRecentNotes(notesList);
+
+        const offers = await db.transferOffers
+          .where('toUserTeamId')
+          .equals(l.userTeamId)
+          .filter(o => o.status === 'pending')
+          .toArray();
+        setPendingOffers(offers);
 
         // Load next unplayed match for user team
         const upcoming = await db.matches
@@ -78,9 +107,9 @@ export function Dashboard() {
   const goalDiff = (team?.goalsFor || 0) - (team?.goalsAgainst || 0);
   const chemistry = calculateTeamChemistry(starters, team || undefined);
 
-  // Top Scorer and Top Assist in starters
-  const topScorers = [...starters].sort((a, b) => (b.stats?.goals || 0) - (a.stats?.goals || 0));
-  const topAssists = [...starters].sort((a, b) => (b.stats?.assists || 0) - (a.stats?.assists || 0));
+  // Top Scorer and Top Assist across the entire squad
+  const topScorers = [...squadPlayers].sort((a, b) => (b.stats?.goals || 0) - (a.stats?.goals || 0) || b.overall - a.overall);
+  const topAssists = [...squadPlayers].sort((a, b) => (b.stats?.assists || 0) - (a.stats?.assists || 0) || b.overall - a.overall);
 
   const handleStartLiveMatch = async () => {
     if (!nextMatch || !team) return;
@@ -443,28 +472,53 @@ export function Dashboard() {
               <span className="news-badge-live">EN VIVO</span>
             </div>
             <div className="news-content-box">
-              <div className="news-item">
-                <div className="news-bullet" />
-                <div>
-                  <strong>Jornada {league?.currentWeek || 1} en marcha</strong>
-                  <p>El cuerpo técnico prepara la estrategia para el próximo compromiso de liga.</p>
+              {pendingOffers.length > 0 && (
+                <div className="news-item" style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                  <div className="news-bullet" style={{ background: '#f59e0b' }} />
+                  <div>
+                    <strong style={{ color: '#fbbf24' }}>📩 {pendingOffers.length} Oferta(s) Oficial(es) de Traspaso Recibidas</strong>
+                    <p>
+                      Clubes rivales han presentado ofertas por jugadores de tu plantilla.{' '}
+                      <Link to={`/l/${leagueId}/trades`} style={{ color: '#38bdf8', fontWeight: 'bold' }}>Responder en Despacho ➡️</Link>
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="news-item">
-                <div className="news-bullet" />
-                <div>
-                  <strong>Rendimiento de Plantilla (OVR Promedio {team?.overall})</strong>
-                  <p>Revisa la solidez defensiva y las tácticas activas en el panel de Alineación.</p>
-                </div>
-              </div>
+              )}
+              {recentNotes.length > 0 ? (
+                recentNotes.map(n => (
+                  <div key={n.id} className="news-item">
+                    <div className="news-bullet" />
+                    <div>
+                      <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.84rem' }}>{n.text}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="news-item">
+                    <div className="news-bullet" />
+                    <div>
+                      <strong>Jornada {league?.currentWeek || 1} en marcha ({team?.coach?.name || 'Mánager'})</strong>
+                      <p>El cuerpo técnico prepara el sistema {team?.formation || '4-3-3'} ({team?.tacticalStyle || 'Equilibrado'}).</p>
+                    </div>
+                  </div>
+                  <div className="news-item">
+                    <div className="news-bullet" />
+                    <div>
+                      <strong>Química del Once Titular: {chemistry.score}% ({chemistry.label})</strong>
+                      <p>Revisa la pizarra de balón parado y las sociedades tácticas en el panel de Alineación.</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Starting XI Table Card */}
           <div className="dash-lineup-panel glass-panel">
             <div className="dash-card-header">
-              <h3><Users size={18} color="#10b981" /> Once Titular del Club</h3>
-              <Link to={`/l/${leagueId}/roster`} className="link-arrow">Plantilla Completa <ArrowRight size={14} /></Link>
+              <h3><Users size={18} color="#10b981" /> Once Titular del Club ({team?.formation || '4-3-3'})</h3>
+              <Link to={`/l/${leagueId}/tactics`} className="link-arrow">Editar Pizarra <ArrowRight size={14} /></Link>
             </div>
             <div className="table-responsive">
               <table className="dash-table">
@@ -483,7 +537,7 @@ export function Dashboard() {
                 <tbody>
                   {starters.map(p => (
                     <tr key={p.id}>
-                      <td className="col-pos">{p.position}</td>
+                      <td className="col-pos">{getSpecificPosition(p)}</td>
                       <td>
                         <Link to={`/l/${leagueId}/player/${p.id}`} className="player-link">
                           {p.name}
@@ -494,7 +548,7 @@ export function Dashboard() {
                       <td>{p.age}</td>
                       <td className="col-ovr">{p.overall}</td>
                       <td className="col-pot">{p.potential}</td>
-                      <td>€{(p.contract / 1000).toFixed(0)}k</td>
+                      <td>{formatMoney(p.contract)}</td>
                       <td className="col-stat">{p.stats?.goals || 0}</td>
                       <td className="col-stat">{p.stats?.assists || 0}</td>
                     </tr>

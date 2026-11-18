@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { type Player, type Team, db } from '../../db/db';
+import { calculateExpectedAnnualWage } from '../../engine/valuationEngine';
 import { PlayerAvatar } from './PlayerAvatar';
 import { Briefcase, AlertTriangle, CheckCircle, ShieldAlert, Award, FileText, X } from 'lucide-react';
 import './ContractNegotiationModal.css';
@@ -30,15 +31,10 @@ export function ContractNegotiationModal({
 }: ContractNegotiationModalProps) {
   if (!isOpen) return null;
 
-  // Expected salary baseline from player's overall rating & market value
+  // Expected salary baseline from valuationEngine
   const baseSalary = useMemo(() => {
-    if (player.overall >= 90) return 18000000;
-    if (player.overall >= 86) return 10000000;
-    if (player.overall >= 82) return 5000000;
-    if (player.overall >= 78) return 2500000;
-    if (player.overall >= 74) return 1200000;
-    return 600000;
-  }, [player.overall]);
+    return calculateExpectedAnnualWage(player, userTeam.prestige || 75);
+  }, [player, userTeam.prestige]);
 
   const [dealType, setDealType] = useState<'permanent' | 'loan'>(mode === 'loan' ? 'loan' : 'permanent');
 
@@ -140,13 +136,24 @@ export function ContractNegotiationModal({
       const actualWage = isLoan ? Math.round(offeredWage * (loanCoveragePct / 100)) : offeredWage;
       const initialBonus = isLoan ? 0 : signingBonus;
       const totalInitialCost = initialBonus + transferFeeAgreed;
+      const prevTeamId = player.teamId;
 
-      // Deduct from budget
+      // Deduct from user team budget
       const newBudget = Math.max(0, currentBudget - totalInitialCost);
       await db.teams.update(userTeam.id!, { budget: newBudget });
 
-      // Update Player
-      const currentYear = 2026;
+      // Credit selling team if transferFeeAgreed > 0
+      if (prevTeamId && prevTeamId !== userTeam.id && transferFeeAgreed > 0) {
+        const sellerTeam = await db.teams.get(prevTeamId);
+        if (sellerTeam) {
+          await db.teams.update(prevTeamId, { budget: (sellerTeam.budget || 0) + transferFeeAgreed });
+        }
+      }
+
+      const league = await db.leagues.get(userTeam.leagueId);
+      const currentYear = league?.season || 2026;
+      const currentWeek = league?.currentWeek || 1;
+
       const updatedPlayer: Player = {
         ...player,
         teamId: userTeam.id!,
@@ -155,7 +162,7 @@ export function ContractNegotiationModal({
         contractEndSeason: currentYear + contractYears,
         releaseClause,
         isOnLoan: isLoan,
-        loanedFromTeamId: isLoan ? (player.teamId || undefined) : undefined,
+        loanedFromTeamId: isLoan ? (prevTeamId || undefined) : undefined,
         buyOptionFee: isLoan && buyOptionType !== 'none' ? buyOptionFee : undefined,
         loanBuyObligation: isLoan && buyOptionType === 'obligation',
         morale: Math.min(100, (player.morale || 80) + 12),
@@ -164,16 +171,22 @@ export function ContractNegotiationModal({
 
       await db.players.put(updatedPlayer);
 
-      // Add to transactions log
+      // Add properly structured transaction entry
+      const txType = isLoan
+        ? (buyOptionType !== 'none' ? 'loan_buy' : 'loan')
+        : (mode === 'renewal' || !prevTeamId || prevTeamId === userTeam.id ? 'sign' : 'transfer');
+
       await db.transactions.add({
         leagueId: userTeam.leagueId,
-        date: Date.now(),
-        type: isLoan ? 'loan' : (mode === 'renewal' ? 'contract_renewal' : 'buy'),
-        playerName: player.name,
-        fromTeamName: player.teamId ? (await db.teams.get(player.teamId))?.name || 'Club anterior' : 'Agente Libre',
-        toTeamName: userTeam.name,
-        amount: totalInitialCost
-      } as any);
+        type: txType,
+        playerId: player.id!,
+        fromTeamId: prevTeamId || undefined,
+        toTeamId: userTeam.id!,
+        amount: txType === 'transfer' ? transferFeeAgreed : (txType === 'loan_buy' ? buyOptionFee : actualWage),
+        season: currentYear,
+        week: currentWeek,
+        date: Date.now()
+      });
 
       onSuccess(updatedPlayer, {
         wage: actualWage,
