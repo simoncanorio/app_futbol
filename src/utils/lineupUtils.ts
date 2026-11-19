@@ -74,46 +74,88 @@ export function getPositionalPenalty(
   const spec = (specificPos || '').toUpperCase();
   const label = (slotLabel || '').toUpperCase();
   const secList = (secondaryPositions || []).map(s => s.toUpperCase());
+  const allKnownPos = [spec, ...secList].filter(Boolean);
 
-  // Goalkeeper check
+  // 1. Goalkeeper check
   if (spec === 'POR' || label === 'POR' || playerPos === 'POR' || slotType === 'POR') {
     if ((spec === 'POR' || playerPos === 'POR') && (label === 'POR' || slotType === 'POR')) return 0;
     return 35;
   }
 
-  // Exact match on specific position or secondary position
-  if (spec && (spec === label || secList.includes(label))) {
+  // 2. Exact match on primary specific position or secondary position
+  if (allKnownPos.includes(label)) {
     return 0;
   }
 
-  // Winger versatility: EI, ED, MI, MD can play across flanks and forward slots
-  if ((spec === 'EI' || spec === 'ED' || secList.includes('EI') || secList.includes('ED')) && (slotType === 'DEL' || label === 'MI' || label === 'MD' || label === 'MCO')) {
-    return 0;
+  // 3. Universal Winger & Wide Attacker Versatility (EI, ED, MI, MD):
+  // Any winger or wide midfielder (like Raphinha, Lamine Yamal, Saka, Vinicius, Nico Williams, Rodrygo)
+  // has 0 penalty on both left and right wings (EI, ED, MI, MD).
+  const isNaturalWinger = allKnownPos.some(pos => ['EI', 'ED', 'MI', 'MD'].includes(pos));
+  if (isNaturalWinger) {
+    if (['EI', 'ED', 'MI', 'MD'].includes(label)) return 0;
+    if (label === 'MCO' || label === 'DC' || label === 'SD') return 1;
+    if (label === 'MC') return 6;
+    if (label === 'MCD') return 14;
+    if (label === 'CAI' || label === 'CAD') return 5;
+    return 14;
   }
 
-  // Pure Strikers on wing get minimal penalty
-  if (spec === 'DC' && (label === 'EI' || label === 'ED')) {
-    return 2;
+  // 4. Pure Strikers / Center Forwards (DC, SD)
+  if (spec === 'DC' || spec === 'SD' || playerPos === 'DEL') {
+    if (label === 'DC' || label === 'SD') return 0;
+    if (['EI', 'ED', 'MI', 'MD'].includes(label)) return 2;
+    if (label === 'MCO') return 4;
+    if (label === 'MC') return 11;
+    if (label === 'MCD') return 16; // Never place a striker at CDM!
+    return 18;
   }
 
-  // Midfielders playing in MED slots
-  if (playerPos === 'MED' && slotType === 'MED') {
-    return 0;
+  // 5. Midfielders (MCD, MC, MCO)
+  if (playerPos === 'MED' || ['MCD', 'MC', 'MCO'].includes(spec)) {
+    if (slotType === 'MED') {
+      if (label === 'MCD' && spec === 'MCO' && !secList.includes('MCD') && !secList.includes('MC')) {
+        return 5; // Pure CAM at CDM has a small defensive penalty
+      }
+      return 0;
+    }
+    if (['EI', 'ED'].includes(label)) {
+      return spec === 'MCO' ? 1 : 4;
+    }
+    if (label === 'DC') {
+      return spec === 'MCO' ? 3 : 7;
+    }
+    if (slotType === 'DEF') {
+      if (label === 'DFC' && spec === 'MCD') return 3;
+      if ((label === 'LI' || label === 'LD' || label === 'CAI' || label === 'CAD') && (spec === 'MC' || spec === 'MCD')) return 5;
+      return 8;
+    }
   }
 
-  // Defenders playing in DEF slots
-  if (playerPos === 'DEF' && slotType === 'DEF') {
-    if ((spec === 'LI' && label === 'LD') || (spec === 'LD' && label === 'LI')) return 2;
-    if ((spec === 'LI' && label === 'CAI') || (spec === 'LD' && label === 'CAD')) return 0;
-    return 0;
+  // 6. Defenders (DFC, LI, LD, CAI, CAD)
+  if (playerPos === 'DEF' || ['DFC', 'LI', 'LD', 'CAI', 'CAD'].includes(spec)) {
+    const canPlayFullbackLeft = allKnownPos.some(p => ['LI', 'CAI', 'MI'].includes(p));
+    const canPlayFullbackRight = allKnownPos.some(p => ['LD', 'CAD', 'MD'].includes(p));
+    const canPlayCB = allKnownPos.includes('DFC') || (!canPlayFullbackLeft && !canPlayFullbackRight);
+
+    if (label === 'DFC') {
+      if (canPlayCB) return 0;
+      return 4; // Pure fullback at CB
+    }
+    if (label === 'LI' || label === 'CAI') {
+      if (canPlayFullbackLeft) return 0;
+      if (canPlayFullbackRight) return 2; // Inverted fullback (e.g. Cancelo / Koundé)
+      return 6; // Pure CB at LB
+    }
+    if (label === 'LD' || label === 'CAD') {
+      if (canPlayFullbackRight) return 0;
+      if (canPlayFullbackLeft) return 2;
+      return 6; // Pure CB at RB (prevents Cubarsí from being put at RB when Koundé is available)
+    }
+    if (label === 'MCD') {
+      return canPlayCB ? 4 : 5;
+    }
+    return 10;
   }
-
-  if (playerPos === slotType) return 0;
-
-  if (playerPos === 'DEL' && slotType === 'MED') return 6;
-  if (playerPos === 'MED' && slotType === 'DEL') return 3;
-  if (playerPos === 'MED' && slotType === 'DEF') return 8;
-  if (playerPos === 'DEF' && slotType === 'MED') return 6;
 
   return 10;
 }
@@ -186,24 +228,51 @@ export async function autoSelectLineupForTeam(teamId: number, customFormation?: 
   }
 
   // Prefer available (not injured, not suspended, not exhausted) players
-  const seniorPool = players.filter(p => p.lineupStatus !== 'youth');
+  const seniorPool = players.filter(p => p.lineupStatus !== 'youth' && !p.isRetired);
   const availablePool = seniorPool.filter(p => !p.isInjured && !p.cards?.suspended);
   const candidatePool = availablePool.length >= 11 ? availablePool : seniorPool;
 
   const usedIds = new Set<number>();
 
-  // Greedily assign best fit player for each slot
-  for (const slot of slots) {
+  // Score helper for how well player `p` fits `slot`
+  const scorePlayerForSlot = (p: Player, slot: PitchSlot): number => {
+    const spec = getSpecificPosition(p).toUpperCase();
+    const secList = (p.secondaryPositions || []).map(s => s.toUpperCase());
+    const label = slot.label.toUpperCase();
+    const penalty = getPositionalPenalty(p.position, slot.slotType, label, spec, p.secondaryPositions);
+    const fatiguePenalty = (p.fatigue || 0) > 75 ? ((p.fatigue || 0) - 75) * 0.25 : 0;
+
+    // Bonus for natural side/role alignment (e.g., Yamal MD/ED prefers ED; Raphinha MI/EI prefers EI; Koundé LD prefers LD)
+    let sideBonus = 0;
+    if (spec === label) sideBonus = 4.5;
+    else if (secList.includes(label)) sideBonus = 3.0;
+    else if ((label === 'EI' && spec === 'MI') || (label === 'ED' && spec === 'MD')) sideBonus = 4.0;
+    else if ((label === 'EI' && secList.includes('MI')) || (label === 'ED' && secList.includes('MD'))) sideBonus = 2.8;
+    else if ((label === 'EI' || label === 'ED') && ['EI', 'ED', 'MI', 'MD'].includes(spec)) sideBonus = 1.5;
+
+    return p.overall - penalty * 2.2 - fatiguePenalty + sideBonus;
+  };
+
+  // Fill specialist slots first (POR -> Fullbacks LI/LD -> CDM MCD -> Strikers/Wingers -> CBs/CMs)
+  const slotPriority = (s: PitchSlot): number => {
+    if (s.label === 'POR') return 1;
+    if (['LI', 'LD', 'CAI', 'CAD'].includes(s.label)) return 2;
+    if (s.label === 'DC') return 3;
+    if (['EI', 'ED', 'MI', 'MD'].includes(s.label)) return 4;
+    if (s.label === 'MCD') return 5;
+    if (s.label === 'DFC') return 6;
+    return 7;
+  };
+
+  const orderedSlots = [...slots].sort((a, b) => slotPriority(a) - slotPriority(b));
+
+  for (const slot of orderedSlots) {
     let bestPlayer: Player | null = null;
     let bestScore = -999;
 
     for (const p of candidatePool) {
       if (usedIds.has(p.id!)) continue;
-      const spec = getSpecificPosition(p);
-      const penalty = getPositionalPenalty(p.position, slot.slotType, slot.label, spec, p.secondaryPositions);
-      const fatiguePenalty = (p.fatigue || 0) > 75 ? ((p.fatigue || 0) - 75) * 0.25 : 0;
-      const exactSpecBonus = spec === slot.label ? 3.5 : (p.secondaryPositions?.includes(slot.label) ? 2 : 0);
-      const score = p.overall - penalty * 1.4 - fatiguePenalty + exactSpecBonus;
+      const score = scorePlayerForSlot(p, slot);
 
       if (score > bestScore) {
         bestScore = score;
@@ -215,6 +284,28 @@ export async function autoSelectLineupForTeam(teamId: number, customFormation?: 
       bestPlayer.lineupStatus = 'starter';
       bestPlayer.pitchPosition = slot.id;
       usedIds.add(bestPlayer.id!);
+    }
+  }
+
+  // Pairwise swap optimization among the 11 starters to maximize natural positions (e.g. Koundé at LD & Cubarsí at DFC, Yamal at ED & Raphinha at EI)
+  const chosenStarters = players.filter(p => p.lineupStatus === 'starter');
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < chosenStarters.length; i++) {
+      for (let j = i + 1; j < chosenStarters.length; j++) {
+        const pA = chosenStarters[i];
+        const pB = chosenStarters[j];
+        const slotA = slots.find(s => s.id === pA.pitchPosition);
+        const slotB = slots.find(s => s.id === pB.pitchPosition);
+        if (!slotA || !slotB) continue;
+
+        const currentScore = scorePlayerForSlot(pA, slotA) + scorePlayerForSlot(pB, slotB);
+        const swappedScore = scorePlayerForSlot(pA, slotB) + scorePlayerForSlot(pB, slotA);
+        if (swappedScore > currentScore + 0.1) {
+          const tmp = pA.pitchPosition;
+          pA.pitchPosition = pB.pitchPosition;
+          pB.pitchPosition = tmp;
+        }
+      }
     }
   }
 

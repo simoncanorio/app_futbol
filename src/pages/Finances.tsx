@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, type Team, type Player } from '../db/db';
 import { calculateSquadFFPAmortization } from '../engine/valuationEngine';
+import { getClubInfrastructureProfile } from '../db/generators';
 import { DollarSign, ShieldCheck, Award, HelpCircle, TrendingUp, TrendingDown, PieChart, Building } from 'lucide-react';
 
 export function Finances() {
@@ -9,6 +10,7 @@ export function Finances() {
   const [team, setTeam] = useState<Team | null>(null);
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   
+  const [youthInv, setYouthInv] = useState(50);
   const [scouting, setScouting] = useState(50);
   const [coaching, setCoaching] = useState(50);
   const [health, setHealth] = useState(50);
@@ -61,11 +63,23 @@ export function Finances() {
       if (l.userTeamId) {
         const userTeam = await db.teams.get(l.userTeamId);
         if (userTeam) {
+          const defaultInfra = getClubInfrastructureProfile(userTeam.name, userTeam.prestige || 75);
+          if (userTeam.scoutingExpense === undefined || userTeam.facilitiesExpense === undefined || userTeam.youthExpense === undefined) {
+            userTeam.youthExpense = userTeam.youthExpense ?? defaultInfra.youthExpense;
+            userTeam.scoutingExpense = userTeam.scoutingExpense ?? defaultInfra.scoutingExpense;
+            userTeam.coachingExpense = userTeam.coachingExpense ?? defaultInfra.coachingExpense;
+            userTeam.healthExpense = userTeam.healthExpense ?? defaultInfra.healthExpense;
+            userTeam.facilitiesExpense = userTeam.facilitiesExpense ?? defaultInfra.facilitiesExpense;
+            if (!userTeam.facilities) userTeam.facilities = defaultInfra.facilities;
+            await db.teams.put(userTeam);
+          }
+
           setTeam(userTeam);
-          setScouting(Math.min(100, userTeam.scoutingExpense || 50));
-          setCoaching(Math.min(100, userTeam.coachingExpense || 50));
-          setHealth(Math.min(100, userTeam.healthExpense || 50));
-          setFacilities(Math.min(100, userTeam.facilitiesExpense || 50));
+          setYouthInv(Math.min(100, userTeam.youthExpense ?? defaultInfra.youthExpense));
+          setScouting(Math.min(100, userTeam.scoutingExpense ?? defaultInfra.scoutingExpense));
+          setCoaching(Math.min(100, userTeam.coachingExpense ?? defaultInfra.coachingExpense));
+          setHealth(Math.min(100, userTeam.healthExpense ?? defaultInfra.healthExpense));
+          setFacilities(Math.min(100, userTeam.facilitiesExpense ?? defaultInfra.facilitiesExpense));
           setTicketPrice(userTeam.ticketPrice || 50);
 
           const players = await db.players.where('teamId').equals(userTeam.id!).toArray();
@@ -78,13 +92,14 @@ export function Finances() {
 
   const saveFinances = async () => {
     if (team) {
+      team.youthExpense = youthInv;
       team.scoutingExpense = scouting;
       team.coachingExpense = coaching;
       team.healthExpense = health;
       team.facilitiesExpense = facilities;
       team.ticketPrice = ticketPrice;
       await db.teams.put(team);
-      alert('¡Ajustes de instalaciones y precio de entradas guardados con éxito!');
+      alert('¡Ajustes de infraestructura, inversión en filial y precio de entradas guardados con éxito!');
     }
   };
 
@@ -549,6 +564,17 @@ export function Finances() {
            <h3 style={{ color: '#f8fafc', marginTop: 0 }}>Ajustes de Inversión en Instalaciones (0 - 100)</h3>
            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Los niveles de inversión incrementan el rendimiento del equipo pero aumentan las pérdidas semanales.</p>
            
+           <div style={{ marginTop: '1.2rem' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+               <label style={{ color: '#e2e8f0', fontWeight: 'bold' }}>Inversión en Filial y Cantera (La Masia / Academia)</label>
+               <span style={{ color: '#10b981', fontWeight: 'bold' }}>{youthInv} / 100</span>
+             </div>
+             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '0.3rem' }}>
+               <input type="range" min="0" max="100" value={youthInv} onChange={e => setYouthInv(Number(e.target.value))} style={{ flex: 1, accentColor: '#10b981' }} />
+             </div>
+             <small style={{ color: '#94a3b8' }}>Determina la calidad media y la probabilidad de aparición de promesas de élite en tu Filial.</small>
+           </div>
+
            <div style={{ marginTop: '1.2rem' }}>
              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                <label style={{ color: '#e2e8f0', fontWeight: 'bold' }}>Red de Ojeo y Scouting</label>

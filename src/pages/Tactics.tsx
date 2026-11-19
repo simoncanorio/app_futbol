@@ -1,125 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, type Player, type Team } from '../db/db';
-import { autoSelectLineupForTeam } from '../utils/lineupUtils';
-import { Shield, Sliders, Award, CheckCircle, AlertTriangle, Info, Sparkles, Heart, Flame } from 'lucide-react';
+import { db, type Player, type Team, getSpecificPosition } from '../db/db';
+import { autoSelectLineupForTeam, FORMATIONS, getPositionalPenalty } from '../utils/lineupUtils';
+import { Shield, Sliders, Award, CheckCircle, AlertTriangle, Sparkles, Heart, Flame } from 'lucide-react';
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
 import { PlayerAvatar } from '../components/common/PlayerAvatar';
 import './Tactics.css';
-
-interface PitchSlot {
-  id: string;
-  top: string;
-  left: string;
-  label: string;
-  slotType: 'POR' | 'DEF' | 'MED' | 'DEL';
-}
-
-const FORMATIONS: Record<string, PitchSlot[]> = {
-  '4-3-3': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
-    { id: 'CM1', top: '45%', left: '30%', label: 'MC', slotType: 'MED' },
-    { id: 'CDM', top: '50%', left: '50%', label: 'MCD', slotType: 'MED' },
-    { id: 'CM2', top: '45%', left: '70%', label: 'MC', slotType: 'MED' },
-    { id: 'LW', top: '25%', left: '20%', label: 'EI', slotType: 'DEL' },
-    { id: 'ST', top: '15%', left: '50%', label: 'DC', slotType: 'DEL' },
-    { id: 'RW', top: '25%', left: '80%', label: 'ED', slotType: 'DEL' },
-  ],
-  '4-4-2': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
-    { id: 'LM', top: '45%', left: '15%', label: 'MI', slotType: 'MED' },
-    { id: 'CM1', top: '45%', left: '40%', label: 'MC', slotType: 'MED' },
-    { id: 'CM2', top: '45%', left: '60%', label: 'MC', slotType: 'MED' },
-    { id: 'RM', top: '45%', left: '85%', label: 'MD', slotType: 'MED' },
-    { id: 'ST1', top: '18%', left: '38%', label: 'DC', slotType: 'DEL' },
-    { id: 'ST2', top: '18%', left: '62%', label: 'DC', slotType: 'DEL' },
-  ],
-  '4-2-3-1': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
-    { id: 'LB', top: '65%', left: '15%', label: 'LI', slotType: 'DEF' },
-    { id: 'CB1', top: '70%', left: '35%', label: 'DFC', slotType: 'DEF' },
-    { id: 'CB2', top: '70%', left: '65%', label: 'DFC', slotType: 'DEF' },
-    { id: 'RB', top: '65%', left: '85%', label: 'LD', slotType: 'DEF' },
-    { id: 'CDM1', top: '52%', left: '38%', label: 'MCD', slotType: 'MED' },
-    { id: 'CDM2', top: '52%', left: '62%', label: 'MCD', slotType: 'MED' },
-    { id: 'LAM', top: '32%', left: '22%', label: 'MCO', slotType: 'MED' },
-    { id: 'CAM', top: '30%', left: '50%', label: 'MCO', slotType: 'MED' },
-    { id: 'RAM', top: '32%', left: '78%', label: 'MCO', slotType: 'MED' },
-    { id: 'ST', top: '15%', left: '50%', label: 'DC', slotType: 'DEL' },
-  ],
-  '3-5-2': [
-    { id: 'GK', top: '85%', left: '50%', label: 'POR', slotType: 'POR' },
-    { id: 'CB1', top: '72%', left: '25%', label: 'DFC', slotType: 'DEF' },
-    { id: 'CB2', top: '74%', left: '50%', label: 'DFC', slotType: 'DEF' },
-    { id: 'CB3', top: '72%', left: '75%', label: 'DFC', slotType: 'DEF' },
-    { id: 'LWB', top: '45%', left: '12%', label: 'CAD', slotType: 'DEF' },
-    { id: 'CM1', top: '48%', left: '35%', label: 'MC', slotType: 'MED' },
-    { id: 'CAM', top: '38%', left: '50%', label: 'MCO', slotType: 'MED' },
-    { id: 'CM2', top: '48%', left: '65%', label: 'MC', slotType: 'MED' },
-    { id: 'RWB', top: '45%', left: '88%', label: 'CAD', slotType: 'DEF' },
-    { id: 'ST1', top: '18%', left: '38%', label: 'DC', slotType: 'DEL' },
-    { id: 'ST2', top: '18%', left: '62%', label: 'DC', slotType: 'DEL' },
-  ]
-};
-
-export function getPositionalPenalty(
-  playerPos: string,
-  slotType: 'POR' | 'DEF' | 'MED' | 'DEL',
-  slotLabel: string,
-  specificPos?: string
-): number {
-  const spec = (specificPos || '').toUpperCase();
-  const label = (slotLabel || '').toUpperCase();
-
-  // Goalkeeper check
-  if (spec === 'POR' || label === 'POR' || playerPos === 'POR' || slotType === 'POR') {
-    if ((spec === 'POR' || playerPos === 'POR') && (label === 'POR' || slotType === 'POR')) return 0;
-    return 35;
-  }
-
-  // Exact match on specific position (EI on EI, ED on ED, DC on DC, DFC on DFC, PO on POR)
-  if (spec && (spec === label || (spec === 'EI' && label === 'EI') || (spec === 'ED' && label === 'ED') || (spec === 'DC' && label === 'DC'))) {
-    return 0;
-  }
-
-  // Winger versatility: EI and ED can play anywhere in DEL (EI, ED, DC, SD) with 0 penalty
-  if ((spec === 'EI' || spec === 'ED') && slotType === 'DEL') {
-    return 0;
-  }
-
-  // Pure Strikers on wing get 0 or max 2 penalty
-  if (spec === 'DC' && (label === 'EI' || label === 'ED')) {
-    return 2;
-  }
-
-  // Midfielders (MCO, MC, MCD, MI, MD) playing in MED slots get 0 penalty
-  if (playerPos === 'MED' && slotType === 'MED') {
-    return 0;
-  }
-
-  // Defenders (DFC, LI, LD, CAD, CAI) playing in DEF slots
-  if (playerPos === 'DEF' && slotType === 'DEF') {
-    if ((spec === 'LI' && label === 'LD') || (spec === 'LD' && label === 'LI')) return 2;
-    return 0;
-  }
-
-  if (playerPos === slotType) return 0;
-
-  if (playerPos === 'DEL' && slotType === 'MED') return 8;
-  if (playerPos === 'MED' && slotType === 'DEL') return 4;
-  if (playerPos === 'MED' && slotType === 'DEF') return 10;
-  if (playerPos === 'DEF' && slotType === 'MED') return 8;
-
-  return 10;
-}
 
 export interface TacticalStyle {
   name: string;
@@ -267,7 +153,7 @@ export function Tactics() {
 
   starters.forEach(p => {
     const slot = currentSlots.find(s => s.id === p.pitchPosition);
-    const penalty = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition) : 0;
+    const penalty = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition, p.secondaryPositions) : 0;
     totalEffectiveOvr += Math.max(35, p.overall - penalty);
     starterCount++;
   });
@@ -301,7 +187,7 @@ export function Tactics() {
     let effSum = 0;
     newStarters.forEach(p => {
       const slot = currentSlots.find(s => s.id === p.pitchPosition);
-      const pen = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition) : 0;
+      const pen = slot ? getPositionalPenalty(p.position, slot.slotType, slot.label, p.specificPosition, p.secondaryPositions) : 0;
       effSum += Math.max(35, p.overall - pen);
     });
     const newOvr = newStarters.length > 0 ? Math.round(effSum / newStarters.length) : team.overall;
@@ -459,7 +345,7 @@ export function Tactics() {
             <div className="football-pitch">
               {currentSlots.map(slot => {
                 const occupant = starters.find(p => p.pitchPosition === slot.id);
-                const penalty = occupant ? getPositionalPenalty(occupant.position, slot.slotType, slot.label, occupant.specificPosition) : 0;
+                const penalty = occupant ? getPositionalPenalty(occupant.position, slot.slotType, slot.label, occupant.specificPosition, occupant.secondaryPositions) : 0;
                 const effectiveOvr = occupant ? Math.max(35, occupant.overall - penalty) : 0;
 
                 return (
@@ -518,6 +404,7 @@ export function Tactics() {
                     <th>OVR</th>
                     <th>Físico</th>
                     <th>Moral</th>
+                    <th>Minutos por Partido (Plan de Cambio)</th>
                     <th>Estado</th>
                   </tr>
                 </thead>
@@ -531,7 +418,9 @@ export function Tactics() {
                         onDragStart={e => handleDragStart(e, p.id!)}
                         className="draggable-row"
                       >
-                        <td className="col-pos">{p.position}</td>
+                        <td className="col-pos" title={p.secondaryPositions ? `Alt: ${p.secondaryPositions.join(', ')}` : undefined}>
+                          {getSpecificPosition(p)}
+                        </td>
                         <td style={{ color: '#ffffff', fontWeight: 'bold' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <PlayerAvatar player={p} size={24} />
@@ -550,6 +439,27 @@ export function Tactics() {
                           </span>
                         </td>
                         <td>
+                          <select
+                            value={p.plannedSubMinutes || 0}
+                            onChange={async e => {
+                              p.plannedSubMinutes = Number(e.target.value);
+                              await db.players.put(p);
+                              setPlayers([...players]);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            className="bb-select"
+                            style={{ padding: '2px 6px', fontSize: '0.75rem', background: (p.plannedSubMinutes && p.plannedSubMinutes > 0) ? 'rgba(16, 185, 129, 0.2)' : '#0f172a', borderColor: (p.plannedSubMinutes && p.plannedSubMinutes > 0) ? '#10b981' : '#334155' }}
+                          >
+                            <option value={0}>Auto (Según fatiga/IA)</option>
+                            <option value={45}>⏱️ 45 min (Entra al 46')</option>
+                            <option value={30}>⏱️ 30 min (Entra al 60')</option>
+                            <option value={20}>⏱️ 20 min (Entra al 70')</option>
+                            <option value={15}>⏱️ 15 min (Entra al 75')</option>
+                            <option value={10}>⏱️ 10 min (Entra al 80')</option>
+                            <option value={-1}>🚫 No entrar</option>
+                          </select>
+                        </td>
+                        <td>
                           {p.isInjured ? (
                             <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold' }}>🚑 Lesionado ({p.injuryWeeks} sem)</span>
                           ) : p.cards?.suspended ? (
@@ -563,7 +473,7 @@ export function Tactics() {
                   })}
                   {bench.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>No hay suplentes en la banca</td>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>No hay suplentes en la banca</td>
                     </tr>
                   )}
                 </tbody>

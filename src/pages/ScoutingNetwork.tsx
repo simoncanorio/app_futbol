@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db, type ScoutMission, type Player, type Team, type League, getInitialPlayerStats, getDetailedAttributes, formatMoney } from '../db/db';
 import { calculatePlayerMarketValue } from '../engine/valuationEngine';
+import { generateRealisticYouthProspectRatings } from '../db/generators';
 import { Compass, Users, MapPin, CheckCircle, Clock, PlusCircle, Eye, Search, AlertCircle, ArrowLeftRight } from 'lucide-react';
 
 export function ScoutingNetwork() {
@@ -111,8 +112,9 @@ export function ScoutingNetwork() {
     };
     const newProspects: Player[] = [];
     for (let i = 0; i < 3; i++) {
-      const ovr = Math.floor(60 + Math.random() * 16);
-      const pot = Math.min(96, ovr + Math.floor(13 + Math.random() * 20));
+      const yRatings = generateRealisticYouthProspectRatings(userTeam.scoutingExpense || 65);
+      const ovr = yRatings.overall;
+      const pot = yRatings.potential;
       const pos = positions[Math.floor(Math.random() * positions.length)];
       const specList = specMap[pos];
       const spec = specList[Math.floor(Math.random() * specList.length)];
@@ -133,7 +135,7 @@ export function ScoutingNetwork() {
         stats: getInitialPlayerStats(),
         isScouted: true,
         personality: 'Ambicioso',
-        developmentType: 'early_bloomer',
+        developmentType: yRatings.developmentType,
         attributes: {
           pace: Math.floor(60 + Math.random() * 32),
           shooting: Math.floor(50 + Math.random() * 38),

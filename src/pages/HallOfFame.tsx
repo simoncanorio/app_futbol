@@ -305,24 +305,35 @@ export function HallOfFame() {
       const lid = Number(leagueId);
       if (!lid) return;
       const allPlayers = await db.players.where('leagueId').equals(lid).toArray();
+      const allTeams = await db.teams.where('leagueId').equals(lid).toArray();
+      const teamNameMap = new Map(allTeams.map(t => [t.id!, t.name]));
       const retiredHof = allPlayers.filter(p => p.isHallOfFame);
 
-      const converted: Legend[] = retiredHof.map(p => ({
-        id: p.id || Math.random(),
-        name: p.name,
-        country: p.bio?.country || 'Internacional',
-        position: p.position,
-        specificPosition: p.specificPosition || p.position,
-        peakOvr: p.overall,
-        era: `Temp. ${p.recruitedYear || 2026} - ${p.contractEndSeason || 2030}`,
-        clubs: 'Club de la Liga',
-        trophies: '⭐ Leyenda Retirada de tu Partida',
-        careerGoals: p.stats?.goals || 0,
-        careerAssists: p.stats?.assists || 0,
-        careerApps: p.stats?.gamesPlayed || 0,
-        bio: `Jugador retirado con honores en esta liga. Peak OVR alcanzado: ${p.overall}.`,
-        isCustomRetired: true
-      }));
+      const converted: Legend[] = retiredHof.map(p => {
+        const histSeasons = Object.values(p.historicalStats || {});
+        const totalGoals = (p.stats?.goals || 0) + histSeasons.reduce((acc, s) => acc + (s.goals || 0), 0);
+        const totalAssists = (p.stats?.assists || 0) + histSeasons.reduce((acc, s) => acc + (s.assists || 0), 0);
+        const totalApps = (p.stats?.gamesPlayed || 0) + histSeasons.reduce((acc, s) => acc + (s.gamesPlayed || 0), 0);
+        const bestOvr = p.peakOvr || p.overall;
+        const clubLabel = p.retiredClubName || (p.teamId ? teamNameMap.get(p.teamId) : undefined) || 'Leyenda de la Liga';
+
+        return {
+          id: p.id || Math.random(),
+          name: p.name,
+          country: p.bio?.country || 'Internacional',
+          position: p.position,
+          specificPosition: p.specificPosition || p.position,
+          peakOvr: bestOvr,
+          era: p.isRetired ? 'Retirado en tu Partida' : `En Activo (Dorsal Consagrado)`,
+          clubs: clubLabel,
+          trophies: p.isRetired ? '🏛️ Leyenda Retirada Automáticamente al Cierre de Carrera' : '⭐ Dorsal Retirado / Consagrado por el Club',
+          careerGoals: totalGoals,
+          careerAssists: totalAssists,
+          careerApps: totalApps,
+          bio: `Leyenda consagrada en tu partida con un Peak OVR de ${bestOvr} y ${totalGoals} goles en ${totalApps} partidos disputados.`,
+          isCustomRetired: true
+        };
+      });
 
       setCustomLegends(converted);
     }

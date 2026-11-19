@@ -10,7 +10,134 @@ const firstNames = ['Juan', 'Carlos', 'Luis', 'Pedro', 'Miguel', 'David', 'Jorge
 const lastNames = ['Garcia', 'Martinez', 'Lopez', 'Sanchez', 'Perez', 'Gomez', 'Rodriguez', 'Fernandez', 'Ruiz', 'Diaz', 'Alvarez', 'Romero', 'Torres'];
 const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Inglaterra', 'Alemania', 'Italia', 'Portugal', 'Uruguay', 'Colombia'];
 const personalities: ('Avaricioso' | 'Ambicioso' | 'Leal' | 'Pragmático')[] = ['Pragmático', 'Ambicioso', 'Leal', 'Avaricioso'];
-const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'normal', 'late_bloomer'];
+const devTypes: ('early_bloomer' | 'normal' | 'late_bloomer' | 'bust')[] = ['early_bloomer', 'normal', 'normal', 'normal', 'late_bloomer', 'late_bloomer', 'bust'];
+
+export function getClubInfrastructureProfile(clubName: string, initialPrestige: number): {
+  youthExpense: number;
+  scoutingExpense: number;
+  coachingExpense: number;
+  healthExpense: number;
+  facilitiesExpense: number;
+  facilities: {
+    stadiumLevel: number;
+    youthLevel: number;
+    trainingLevel: number;
+  };
+} {
+  const n = (clubName || '').toLowerCase();
+
+  // 1. FC Barcelona - La Masia at maximum investment + elite facilities
+  if (n.includes('barcelona') || n.includes('barca')) {
+    return {
+      youthExpense: 98,
+      scoutingExpense: 95,
+      coachingExpense: 92,
+      healthExpense: 88,
+      facilitiesExpense: 92,
+      facilities: { stadiumLevel: 5, youthLevel: 5, trainingLevel: 5 }
+    };
+  }
+
+  // 2. European Super-Giants (Real Madrid, Man City, Bayern, PSG)
+  if (n.includes('real madrid') || n.includes('manchester city') || n.includes('bayern') || n.includes('paris saint') || n.includes('psg')) {
+    return {
+      youthExpense: 90,
+      scoutingExpense: 95,
+      coachingExpense: 96,
+      healthExpense: 94,
+      facilitiesExpense: 98,
+      facilities: { stadiumLevel: 5, youthLevel: 5, trainingLevel: 5 }
+    };
+  }
+
+  // 3. Elite European Contenders (Liverpool, Arsenal, Chelsea, Man Utd, Inter, Juventus, Milan, Atlético)
+  if (
+    n.includes('liverpool') || n.includes('arsenal') || n.includes('chelsea') ||
+    n.includes('manchester united') || n === 'inter' || n.includes('juventus') ||
+    n.includes('milan') || n.includes('atletico') || n.includes('atlético') || n.includes('tottenham')
+  ) {
+    return {
+      youthExpense: 86,
+      scoutingExpense: 90,
+      coachingExpense: 90,
+      healthExpense: 88,
+      facilitiesExpense: 91,
+      facilities: { stadiumLevel: 5, youthLevel: 4, trainingLevel: 5 }
+    };
+  }
+
+  // 4. Historic Youth Academy & Scouting Powerhouses (Athletic, Dortmund, Leverkusen, Sporting, Benfica, Porto, River, Boca, Real Sociedad, Atalanta, Brighton, Leipzig)
+  if (
+    n.includes('athletic') || n.includes('dortmund') || n.includes('leverkusen') ||
+    n.includes('sporting') || n.includes('benfica') || n.includes('porto') ||
+    n.includes('river') || n.includes('boca') || n.includes('real sociedad') ||
+    n.includes('atalanta') || n.includes('brighton') || n.includes('leipzig') || n.includes('villarreal')
+  ) {
+    return {
+      youthExpense: 93,
+      scoutingExpense: 91,
+      coachingExpense: 85,
+      healthExpense: 82,
+      facilitiesExpense: 83,
+      facilities: { stadiumLevel: 4, youthLevel: 5, trainingLevel: 4 }
+    };
+  }
+
+  // 5. Proportional scaling by club prestige for all other clubs
+  const baseInv = Math.min(86, Math.max(35, Math.round((initialPrestige - 38) * 1.15)));
+  return {
+    youthExpense: baseInv,
+    scoutingExpense: baseInv,
+    coachingExpense: Math.min(88, baseInv + 2),
+    healthExpense: Math.max(35, baseInv - 2),
+    facilitiesExpense: baseInv,
+    facilities: {
+      stadiumLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 76 ? 3 : initialPrestige >= 64 ? 2 : 1,
+      youthLevel: initialPrestige >= 86 ? 4 : initialPrestige >= 75 ? 3 : initialPrestige >= 64 ? 2 : 1,
+      trainingLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 76 ? 3 : initialPrestige >= 64 ? 2 : 1
+    }
+  };
+}
+
+export function generateRealisticYouthProspectRatings(youthInvestment: number = 60): {
+  overall: number;
+  potential: number;
+  developmentType: 'early_bloomer' | 'normal' | 'late_bloomer' | 'bust';
+} {
+  const invFactor = Math.max(0, Math.min(1, youthInvestment / 100));
+  const overall = 54 + Math.floor(Math.random() * 10) + Math.round(invFactor * 4); // 54-67 OVR
+  const r = Math.random();
+
+  let potential = 74;
+  if (r < 0.002 + invFactor * 0.016) {
+    // Generational Wonderkid (0.2% to 1.8% chance even at La Masia): 89 - 93 POT
+    potential = 89 + Math.floor(Math.random() * 5);
+  } else if (r < 0.025 + invFactor * 0.085) {
+    // Elite Star Prospect (~2.5% to 11%): 84 - 88 POT
+    potential = 84 + Math.floor(Math.random() * 5);
+  } else if (r < 0.16 + invFactor * 0.24) {
+    // First-Team Starter Ceiling (~16% to 40%): 79 - 83 POT
+    potential = 79 + Math.floor(Math.random() * 5);
+  } else if (r < 0.65 + invFactor * 0.22) {
+    // Solid Top-Flight Rotation (~50%): 73 - 78 POT
+    potential = 73 + Math.floor(Math.random() * 6);
+  } else {
+    // Modest Ceiling: 67 - 72 POT
+    potential = 67 + Math.floor(Math.random() * 6);
+  }
+
+  potential = Math.max(overall + 4, Math.min(94, potential));
+
+  // Development curve: even high-potential youth can be late bloomers or busts
+  const devRoll = Math.random();
+  const bustChance = 0.26 - invFactor * 0.10; // Better academies have slightly lower bust rate (16% vs 26%)
+  let developmentType: 'early_bloomer' | 'normal' | 'late_bloomer' | 'bust' = 'normal';
+  if (devRoll < bustChance) developmentType = 'bust';
+  else if (devRoll < bustChance + 0.22) developmentType = 'late_bloomer';
+  else if (devRoll < bustChance + 0.40) developmentType = 'early_bloomer';
+
+  return { overall, potential, developmentType };
+}
 
 export const espTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'LaLiga').map(c => c.name);
 export const engTeams = EA_FC_DATABASE.filter(c => c.domesticLeague === 'Premier League').map(c => c.name);
@@ -270,6 +397,7 @@ export async function createNewLeague(
     const tacId = getClubTacticalIdentity(tname);
     const baseOvr = histMatch ? histMatch.overall : (fifaMatch ? fifaMatch.overall : randomInt(76, 85));
     const pop = randomInt(1000000, 12000000);
+    const infra = getClubInfrastructureProfile(tname, initialPrestige);
 
     const teamId = await db.teams.add({
       leagueId,
@@ -297,17 +425,18 @@ export async function createNewLeague(
       form: [],
       budget: fifaMatch ? fifaMatch.budget : randomInt(40, 160) * 1000000,
       population: pop,
-      attendance: randomInt(28000, 78000),
-      ticketPrice: randomInt(45, 125),
+      attendance: initialPrestige >= 92 ? randomInt(62000, 82000) : initialPrestige >= 84 ? randomInt(45000, 64000) : randomInt(22000, 44000),
+      ticketPrice: initialPrestige >= 90 ? randomInt(85, 130) : randomInt(45, 85),
       revenue: 0,
       profit: 0,
+      youthExpense: infra.youthExpense,
+      scoutingExpense: infra.scoutingExpense,
+      coachingExpense: infra.coachingExpense,
+      healthExpense: infra.healthExpense,
+      facilitiesExpense: infra.facilitiesExpense,
       hype: Math.min(95, initialPrestige),
       boardConfidence: 90,
-      facilities: {
-        stadiumLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2,
-        youthLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 78 ? 3 : 2,
-        trainingLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2
-      },
+      facilities: infra.facilities,
       kit: fifaMatch
         ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern }
         : { primaryColor: isEsp ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' }
@@ -456,8 +585,9 @@ export async function createNewLeague(
     const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
 
     for (let y = 0; y < 5; y++) {
-      const ovr = randomInt(62, 73);
-      const pot = Math.min(96, ovr + randomInt(13, 22));
+      const yRatings = generateRealisticYouthProspectRatings(infra.youthExpense);
+      const ovr = yRatings.overall;
+      const pot = yRatings.potential;
       const cYears = randomInt(3, 5);
       const ypObj: any = {
         leagueId,
@@ -468,23 +598,23 @@ export async function createNewLeague(
         potential: pot,
         position: youthPositions[y],
         specificPosition: youthSpecific[y],
-        contract: randomInt(250000, 750000),
+        contract: randomInt(120000, 450000),
         contractYears: cYears,
         contractEndSeason: startYear + cYears,
         lineupStatus: 'youth',
         personality: personalities[Math.floor(Math.random() * personalities.length)],
-        developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+        developmentType: yRatings.developmentType,
         fatigue: 0,
         morale: 92,
         injuryProne: randomInt(10, 50),
         stats: getInitialPlayerStats(),
         attributes: {
-          pace: randomInt(62, 90),
-          shooting: randomInt(50, 84),
-          passing: randomInt(55, 86),
-          dribbling: randomInt(60, 88),
-          defending: randomInt(40, 80),
-          physical: randomInt(50, 82)
+          pace: randomInt(56, 78),
+          shooting: randomInt(48, 72),
+          passing: randomInt(50, 74),
+          dribbling: randomInt(55, 76),
+          defending: randomInt(38, 70),
+          physical: randomInt(48, 72)
         },
         bio: {
           height: randomInt(169, 191),
@@ -575,6 +705,7 @@ export async function createRealLeagueFromTransfermarkt(
       else if (nameLow.includes('barcelona') || nameLow.includes('manchester city') || nameLow.includes('bayern')) initialPrestige = 95;
 
       const pop = randomInt(1000000, 15000000);
+      const infra = getClubInfrastructureProfile(club.name, initialPrestige);
       const teamId = await db.teams.add({
         leagueId,
         domesticLeague: competitionId === 'WORLD' ? 'Superliga Mundial' : (compData.name || 'LaLiga'),
@@ -601,17 +732,18 @@ export async function createRealLeagueFromTransfermarkt(
         form: [],
         budget: fifaMatch ? fifaMatch.budget : randomInt(30, 180) * 1000000,
         population: pop,
-        attendance: randomInt(28000, 76000),
-        ticketPrice: randomInt(45, 120),
+        attendance: initialPrestige >= 92 ? randomInt(62000, 82000) : initialPrestige >= 84 ? randomInt(45000, 64000) : randomInt(22000, 44000),
+        ticketPrice: initialPrestige >= 90 ? randomInt(85, 130) : randomInt(45, 85),
         revenue: 0,
         profit: 0,
+        youthExpense: infra.youthExpense,
+        scoutingExpense: infra.scoutingExpense,
+        coachingExpense: infra.coachingExpense,
+        healthExpense: infra.healthExpense,
+        facilitiesExpense: infra.facilitiesExpense,
         hype: Math.min(95, initialPrestige),
         boardConfidence: 90,
-        facilities: {
-          stadiumLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2,
-          youthLevel: initialPrestige >= 88 ? 4 : initialPrestige >= 78 ? 3 : 2,
-          trainingLevel: initialPrestige >= 90 ? 4 : initialPrestige >= 80 ? 3 : 2
-        },
+        facilities: infra.facilities,
         kit: fifaMatch
           ? { primaryColor: fifaMatch.primaryColor, secondaryColor: fifaMatch.secondaryColor, pattern: fifaMatch.pattern }
           : { primaryColor: i % 2 === 0 ? '#ef4444' : '#3b82f6', secondaryColor: '#ffffff', pattern: 'solid' as const }
@@ -749,8 +881,9 @@ export async function createRealLeagueFromTransfermarkt(
       const youthSpecific: ('POR' | 'DFC' | 'MC' | 'MCO' | 'EI')[] = ['POR', 'DFC', 'MC', 'MCO', 'EI'];
 
       for (let y = 0; y < 5; y++) {
-        const ovr = randomInt(62, 73);
-        const pot = Math.min(96, ovr + randomInt(13, 22));
+        const yRatings = generateRealisticYouthProspectRatings(infra.youthExpense);
+        const ovr = yRatings.overall;
+        const pot = yRatings.potential;
         const cYears = randomInt(3, 5);
         const ypObj: any = {
           leagueId,
@@ -761,23 +894,23 @@ export async function createRealLeagueFromTransfermarkt(
           potential: pot,
           position: youthPositions[y],
           specificPosition: youthSpecific[y],
-          contract: randomInt(250000, 750000),
+          contract: randomInt(120000, 450000),
           contractYears: cYears,
           contractEndSeason: startYear + cYears,
           lineupStatus: 'youth',
           personality: personalities[Math.floor(Math.random() * personalities.length)],
-          developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+          developmentType: yRatings.developmentType,
           fatigue: 0,
           morale: 92,
           injuryProne: randomInt(10, 50),
           stats: getInitialPlayerStats(),
           attributes: {
-            pace: randomInt(62, 90),
-            shooting: randomInt(50, 84),
-            passing: randomInt(55, 86),
-            dribbling: randomInt(60, 88),
-            defending: randomInt(40, 80),
-            physical: randomInt(50, 82)
+            pace: randomInt(56, 78),
+            shooting: randomInt(48, 72),
+            passing: randomInt(50, 74),
+            dribbling: randomInt(55, 76),
+            defending: randomInt(38, 70),
+            physical: randomInt(48, 72)
           },
           bio: {
             height: randomInt(169, 191),

@@ -6,6 +6,7 @@ import { autoSelectLineupForTeam, checkLineupReady } from '../utils/lineupUtils'
 import { calculateTeamChemistry } from '../utils/chemistryUtils';
 import { calculatePlayerMarketValue, calculateExpectedAnnualWage } from './valuationEngine';
 import { sortStandingsWithTiebreakers, SECOND_DIVISION_CLUBS } from '../utils/standingsUtils';
+import { generateRealisticYouthProspectRatings } from '../db/generators';
 
 const REGEN_FIRST_NAMES: Record<string, string[]> = {
   'España': ['Álvaro', 'Pablo', 'Alejandro', 'Pau', 'Marc', 'Iker', 'Unai', 'Dani', 'Hugo', 'Martín', 'Fermín', 'Gavi'],
@@ -244,22 +245,77 @@ export async function advanceWeek(leagueId: number) {
     } else if (p.lineupStatus === 'youth') {
       p.fatigue = 0;
       p.morale = Math.min(100, (p.morale || 90) + 1);
-      if (league.currentWeek % 4 === 0 && p.overall < p.potential) {
-        const youthBonus = (pTeam?.facilities?.youthLevel || 1) * 0.08 + (p.mentorId ? 0.12 : 0);
-        if (Math.random() < (0.35 + youthBonus)) {
+      // Scale youth academy progression by youth investment (0..100), youth facilities (1..5), mentorship, and archetype
+      if (league.currentWeek % 5 === 0 && p.overall < p.potential) {
+        const youthInv = (pTeam?.youthExpense ?? 60) / 100;
+        const devType = p.developmentType || 'normal';
+        const archMod = devType === 'early_bloomer' ? 0.14 : devType === 'bust' ? -0.22 : devType === 'late_bloomer' ? -0.05 : 0;
+        const youthBonus = (pTeam?.facilities?.youthLevel || 1) * 0.05 + youthInv * 0.25 + (p.mentorId ? 0.12 : 0) + archMod;
+        if (Math.random() < Math.max(0.05, 0.18 + youthBonus)) {
           p.overall += 1;
+          p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
           if (p.attributes) {
             p.attributes.shooting = Math.min(p.potential, p.attributes.shooting + 1);
             p.attributes.passing = Math.min(p.potential, p.attributes.passing + 1);
             p.attributes.dribbling = Math.min(p.potential, p.attributes.dribbling + 1);
             p.attributes.defending = Math.min(p.potential, p.attributes.defending + 1);
           }
+        } else if (devType === 'bust' && p.potential > p.overall + 2 && Math.random() < 0.20) {
+          // Unfulfilled youth prospects ("bust") gradually lose inflated potential ceiling
+          p.potential = Math.max(p.overall, p.potential - 1);
         }
       }
     } else {
       // Reserve
       p.fatigue = Math.max(0, (p.fatigue || 0) - 28 - extraFatigueRecovery);
       p.morale = Math.max(10, (p.morale || 85) - 3);
+    }
+
+    p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
+
+    // Mid-season dynamic progression / regression check (Weeks 12, 24, 36)
+    if (!p.isRetired && p.lineupStatus !== 'youth' && [12, 24, 36].includes(league.currentWeek)) {
+      const gp = p.stats?.gamesPlayed || 0;
+      const avgRating = p.stats?.averageRating || 6.6;
+      const devType = p.developmentType || 'normal';
+
+      if (devType === 'late_bloomer' && p.age >= 24 && p.age <= 29 && gp >= 6 && avgRating >= 7.12) {
+        // Late bloomer mid-season breakout! Can even exceed initial potential ceiling
+        if (Math.random() < 0.55) {
+          if (p.overall >= p.potential) p.potential = Math.min(95, p.potential + 1);
+          p.overall = Math.min(p.potential, p.overall + 1);
+          p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
+          if (p.teamId === league.userTeamId) {
+            await db.notes.add({
+              leagueId,
+              entityType: 'player',
+              entityId: p.id,
+              text: `遅⚡ EXPLOSIÓN TARDÍA (Late Bloomer): ${p.name} (${p.age} años) alcanza la madurez futbolística y sube a ${p.overall} OVR tras brillar con media de ${avgRating.toFixed(2)}.`,
+              createdAt: Date.now()
+            });
+          }
+        }
+      } else if (p.age <= 24 && p.overall < p.potential && gp >= 6 && avgRating >= 7.25 && devType !== 'bust') {
+        if (Math.random() < (devType === 'early_bloomer' ? 0.60 : 0.40)) {
+          p.overall = Math.min(p.potential, p.overall + 1);
+          p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
+        }
+      } else if (devType === 'bust' && p.age >= 20) {
+        // Bust stagnates or regresses if not performing
+        if (p.potential > p.overall) {
+          p.potential = Math.max(p.overall, p.potential - 1);
+        }
+        if (avgRating < 6.45 && p.overall > 64 && Math.random() < 0.30) {
+          p.overall -= 1;
+        }
+      } else if (p.age >= 32 && avgRating < 6.55 && gp >= 5 && Math.random() < 0.35) {
+        // Veteran mid-season physical decline
+        p.overall = Math.max(55, p.overall - 1);
+        if (p.attributes) {
+          p.attributes.pace = Math.max(30, p.attributes.pace - 1);
+          p.attributes.physical = Math.max(30, p.attributes.physical - 1);
+        }
+      }
     }
 
     if ((p.morale || 85) < 35) {
@@ -749,6 +805,10 @@ export async function startNextSeason(leagueId: number) {
 
   // 4. Dynamic Player Evolution, Attribute Scaling, Loan Returns & Contract Expiration
   for (const p of allPlayers) {
+    if (p.isRetired) continue;
+
+    p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
+
     if (p.stats) {
       if (!p.historicalStats) p.historicalStats = {};
       p.historicalStats[league.season] = { ...p.stats };
@@ -786,31 +846,64 @@ export async function startNextSeason(leagueId: number) {
       }
     }
 
-    // Calculate OVR growth / decline
+    // Calculate OVR growth / decline by development archetype ('early_bloomer', 'normal', 'late_bloomer', 'bust')
     let ovrDelta = 0;
     const devType = p.developmentType || 'normal';
-    const formBonus = avgRating >= 7.3 && gamesPlayed >= 12 ? 1 : 0;
+    const formBonus = avgRating >= 7.25 && gamesPlayed >= 12 ? 1 : 0;
 
-    if (p.age <= 21) {
-      if (devType === 'bust' && Math.random() < 0.65) {
-        ovrDelta = 0;
+    if (devType === 'bust') {
+      // Unfulfilled Promise ("Bust"): peak never arrives; loses potential ceiling and stagnates or regresses early
+      p.potential = Math.max(p.overall, p.potential - (2 + Math.floor(Math.random() * 3)));
+      if (p.age <= 21) {
+        ovrDelta = Math.random() < 0.30 && gamesPlayed >= 15 ? 1 : 0;
+      } else if (p.age <= 27) {
+        ovrDelta = (gamesPlayed < 10 || avgRating < 6.55) && Math.random() < 0.45 ? -1 : 0;
       } else {
-        const baseGrowth = gamesPlayed >= 14 ? 2 + Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 2);
-        ovrDelta = baseGrowth + (devType === 'early_bloomer' ? 1 : 0) + formBonus;
+        ovrDelta = -(1 + Math.floor(Math.random() * 2));
       }
-    } else if (p.age <= 24) {
-      const baseGrowth = gamesPlayed >= 15 ? 1 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2);
-      ovrDelta = baseGrowth + (devType === 'late_bloomer' ? 1 : 0) + formBonus;
-    } else if (p.age <= 27) {
-      if (devType === 'late_bloomer' && p.overall < p.potential) {
-        ovrDelta = 1 + formBonus;
-      } else if (formBonus > 0 && p.overall < p.potential) {
-        ovrDelta = 1;
+    } else if (devType === 'early_bloomer') {
+      // Early Bloomer: explodes at 16-22, hits ceiling early (23-26), starts declining earlier (29-30)
+      if (p.age <= 22) {
+        const baseGrowth = gamesPlayed >= 12 ? 2 + Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 2);
+        ovrDelta = baseGrowth + 1 + formBonus;
+      } else if (p.age <= 25) {
+        ovrDelta = formBonus;
+      } else if (p.age >= 29 && p.age <= 31) {
+        ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 0 : 1));
+      } else if (p.age >= 32) {
+        ovrDelta = -(1 + Math.floor(Math.random() * 2));
       }
-    } else if (p.age >= 31 && p.age <= 33) {
-      ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 0 : 1));
-    } else if (p.age >= 34) {
-      ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 1 : 2));
+    } else if (devType === 'late_bloomer') {
+      // Late Bloomer: modest at 16-22, explodes between 24 and 29 (can even exceed original potential!), holds peak until 33
+      if (p.age <= 22) {
+        ovrDelta = gamesPlayed >= 14 ? 1 : Math.floor(Math.random() * 2);
+      } else if (p.age >= 23 && p.age <= 29) {
+        const baseLate = 1 + Math.floor(Math.random() * 2) + formBonus;
+        ovrDelta = baseLate;
+        // Can break past initial potential ceiling during late surge!
+        if (p.overall + ovrDelta > p.potential && (avgRating >= 7.05 || gamesPlayed >= 15)) {
+          p.potential = Math.min(95, Math.max(p.potential, p.overall + ovrDelta));
+        }
+      } else if (p.age >= 30 && p.age <= 32) {
+        ovrDelta = formBonus > 0 && p.overall < p.potential ? 1 : 0;
+      } else if (p.age >= 34) {
+        ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 0 : 1));
+      }
+    } else {
+      // Normal development curve: grows 16-25, prime 26-30, declines 31+
+      if (p.age <= 21) {
+        const baseGrowth = gamesPlayed >= 14 ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+        ovrDelta = baseGrowth + formBonus;
+      } else if (p.age <= 25) {
+        const baseGrowth = gamesPlayed >= 15 ? 1 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2);
+        ovrDelta = baseGrowth + formBonus;
+      } else if (p.age <= 28) {
+        if (formBonus > 0 && p.overall < p.potential) ovrDelta = 1;
+      } else if (p.age >= 31 && p.age <= 33) {
+        ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 0 : 1));
+      } else if (p.age >= 34) {
+        ovrDelta = -(Math.floor(Math.random() * 2) + (p.position === 'POR' ? 1 : 2));
+      }
     }
 
     const oldOvr = p.overall;
@@ -820,6 +913,7 @@ export async function startNextSeason(leagueId: number) {
       p.overall = Math.max(48, p.overall + ovrDelta);
       p.potential = Math.max(p.overall, p.potential + ovrDelta);
     }
+    p.peakOvr = Math.max(p.peakOvr || p.overall, p.overall);
 
     const actualDelta = p.overall - oldOvr;
     if (actualDelta !== 0) {
@@ -827,8 +921,8 @@ export async function startNextSeason(leagueId: number) {
         p.attributes = { pace: p.overall, shooting: p.overall - 5, passing: p.overall - 2, dribbling: p.overall - 2, defending: p.overall - 10, physical: p.overall - 3 };
       }
       // Older players lose pace/physical faster than passing/shooting
-      const paceDelta = actualDelta < 0 && p.age >= 31 ? actualDelta - 1 : actualDelta;
-      const techDelta = actualDelta < 0 && p.age >= 31 ? Math.min(0, actualDelta + 1) : actualDelta;
+      const paceDelta = actualDelta < 0 && p.age >= 30 ? actualDelta - 1 : actualDelta;
+      const techDelta = actualDelta < 0 && p.age >= 30 ? Math.min(0, actualDelta + 1) : actualDelta;
 
       p.attributes.pace = Math.max(30, Math.min(99, p.attributes.pace + paceDelta));
       p.attributes.physical = Math.max(30, Math.min(99, p.attributes.physical + paceDelta));
@@ -859,29 +953,62 @@ export async function startNextSeason(leagueId: number) {
     }
   }
 
-  // 5. Retirements & Authentic Regens
-  const playersToDelete = allPlayers.filter(p => p.age >= 37 || (p.age >= 35 && p.overall <= 68));
+  // 5. Retirements, Dynamic Hall of Fame Induction & Authentic Regens
+  const retiringPlayers = allPlayers.filter(p => !p.isRetired && (p.age >= 37 || (p.age >= 35 && p.overall <= 71)));
+  const playersToDelete: Player[] = [];
+  const newlyInductedNames: string[] = [];
+
+  for (const ret of retiringPlayers) {
+    const careerGoals = Object.values(ret.historicalStats || {}).reduce((acc, s) => acc + (s.goals || 0), 0);
+    const careerApps = Object.values(ret.historicalStats || {}).reduce((acc, s) => acc + (s.gamesPlayed || 0), 0);
+    const bestOvr = ret.peakOvr || ret.overall;
+    const isLegend = ret.isHallOfFame || bestOvr >= 84 || careerGoals >= 70 || careerApps >= 110;
+
+    if (isLegend) {
+      const lastClubName = ret.teamId ? (teamLookup.get(ret.teamId)?.name || 'Leyenda de Élite') : 'Leyenda del Fútbol';
+      ret.isHallOfFame = true;
+      ret.isRetired = true;
+      ret.retiredClubName = `${lastClubName} (Retirado en ${league.season})`;
+      ret.overall = bestOvr; // Preserve peak OVR for Hall of Fame display
+      ret.teamId = null;
+      ret.lineupStatus = 'reserve';
+      ret.pitchPosition = undefined;
+      newlyInductedNames.push(`${ret.name} (${bestOvr} OVR)`);
+    } else {
+      playersToDelete.push(ret);
+    }
+  }
+
+  if (newlyInductedNames.length > 0) {
+    await db.notes.add({
+      leagueId,
+      entityType: 'general',
+      text: `🏛️ NUEVAS LEYENDAS EN EL SALÓN DE LA FAMA: Tras anunciar su retiro oficial al cierre de la temporada ${league.season}, ingresan al Salón de la Fama: ${newlyInductedNames.slice(0, 6).join(', ')}.`,
+      createdAt: Date.now()
+    });
+  }
+
   const remainingPlayers = allPlayers.filter(p => !playersToDelete.includes(p));
 
-  const devTypes: Player['developmentType'][] = ['early_bloomer', 'normal', 'normal', 'late_bloomer'];
+  const devTypes: Player['developmentType'][] = ['early_bloomer', 'normal', 'normal', 'late_bloomer', 'bust'];
   const personalities: Player['personality'][] = ['Ambicioso', 'Leal', 'Pragmático', 'Avaricioso'];
 
-  const newRegens: Player[] = playersToDelete.map(retired => {
+  const newRegens: Player[] = retiringPlayers.map(retired => {
     const country = retired.bio?.country || 'España';
     const regenAge = 16 + Math.floor(Math.random() * 3); // 16-18
-    const regenOvr = 60 + Math.floor(Math.random() * 13); // 60-72
-    const minPot = Math.max(76, Math.min(94, retired.overall + 2));
-    const regenPot = Math.min(96, Math.max(minPot, 76 + Math.floor(Math.random() * 19)));
+    const retiredClub = retired.teamId ? teamLookup.get(retired.teamId) : undefined;
+    const youthInv = retiredClub?.youthExpense ?? 65;
+    const { overall: regenOvr, potential: regenPot, developmentType: regenDevType } = generateRealisticYouthProspectRatings(youthInv);
     const pos = retired.position;
     const specPos = retired.specificPosition || (pos === 'POR' ? 'POR' : pos === 'DEF' ? 'DFC' : pos === 'MED' ? 'MC' : 'DC');
 
     const baseAttrs = {
-      pace: Math.min(92, regenOvr + (pos === 'DEL' ? 10 : pos === 'DEF' ? 4 : 6) + Math.floor(Math.random() * 6)),
-      shooting: Math.min(88, pos === 'DEL' ? regenOvr + 6 : pos === 'MED' ? regenOvr - 2 : regenOvr - 16),
-      passing: Math.min(88, pos === 'MED' ? regenOvr + 6 : regenOvr - 2),
-      dribbling: Math.min(90, pos === 'DEL' || pos === 'MED' ? regenOvr + 5 : regenOvr - 6),
-      defending: Math.min(88, pos === 'DEF' ? regenOvr + 7 : pos === 'MED' ? regenOvr - 5 : 35),
-      physical: Math.min(86, regenOvr + Math.floor(Math.random() * 6))
+      pace: Math.min(90, regenOvr + (pos === 'DEL' ? 10 : pos === 'DEF' ? 4 : 6) + Math.floor(Math.random() * 6)),
+      shooting: Math.min(86, pos === 'DEL' ? regenOvr + 6 : pos === 'MED' ? regenOvr - 2 : regenOvr - 16),
+      passing: Math.min(86, pos === 'MED' ? regenOvr + 6 : regenOvr - 2),
+      dribbling: Math.min(88, pos === 'DEL' || pos === 'MED' ? regenOvr + 5 : regenOvr - 6),
+      defending: Math.min(86, pos === 'DEF' ? regenOvr + 7 : pos === 'MED' ? regenOvr - 5 : 35),
+      physical: Math.min(85, regenOvr + Math.floor(Math.random() * 6))
     };
 
     const tempPlayer: Partial<Player> = {
@@ -895,11 +1022,12 @@ export async function startNextSeason(leagueId: number) {
 
     return {
       leagueId,
-      teamId: retired.teamId, // Spawns in the academy/reserves of the club where the legend retired (or FA if null)
+      teamId: retired.teamId, // Spawns in the academy/reserves of the club where the player retired
       name: generateRegenName(country),
       age: regenAge,
       overall: regenOvr,
       potential: regenPot,
+      peakOvr: regenOvr,
       position: pos,
       specificPosition: specPos,
       secondaryPositions: retired.secondaryPositions,
@@ -920,7 +1048,7 @@ export async function startNextSeason(leagueId: number) {
         weakFoot: retired.bio?.weakFoot || 3,
         skillMoves: retired.bio?.skillMoves || 3
       },
-      developmentType: devTypes[Math.floor(Math.random() * devTypes.length)],
+      developmentType: regenDevType || devTypes[Math.floor(Math.random() * devTypes.length)],
       personality: personalities[Math.floor(Math.random() * personalities.length)],
       morale: 95,
       fatigue: 0,

@@ -221,6 +221,10 @@ export interface Player {
   squadRole?: 'Estrella' | 'Titular' | 'Rotación' | 'Promesa';
   internationalCaps?: number;
   internationalGoals?: number;
+  plannedSubMinutes?: number; // 0 = auto, 10/15/20/30/45 = target sub minutes per match, -1 = do not sub
+  isRetired?: boolean;
+  retiredClubName?: string;
+  peakOvr?: number;
 }
 
 export interface Team {
@@ -254,6 +258,7 @@ export interface Team {
   revenue: number;
   profit: number;
   scoutingExpense?: number;
+  youthExpense?: number;
   coachingExpense?: number;
   healthExpense?: number;
   facilitiesExpense?: number;

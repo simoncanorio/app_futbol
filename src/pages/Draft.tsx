@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type League, type Team, getInitialPlayerStats, getDetailedAttributes } from '../db/db';
+import { generateRealisticYouthProspectRatings } from '../db/generators';
 import { FileText, CheckCircle2, XCircle } from 'lucide-react';
 
 export function Draft() {
@@ -54,8 +55,9 @@ export function Draft() {
     const countries = ['España', 'Argentina', 'Brasil', 'Francia', 'Portugal', 'Uruguay', 'Colombia'];
     const newProspects: Player[] = [];
     for(let i=0; i<20; i++) {
-      const ovr = 56 + Math.floor(Math.random() * 14);
-      const pot = Math.min(95, Math.max(ovr + 10, 68 + Math.floor(Math.random() * 26)));
+      const yRatings = generateRealisticYouthProspectRatings(55);
+      const ovr = yRatings.overall;
+      const pot = yRatings.potential;
       const pos = positions[Math.floor(Math.random()*positions.length)];
       const specList = specMap[pos];
       const spec = specList[Math.floor(Math.random() * specList.length)];
@@ -75,7 +77,7 @@ export function Draft() {
         isDraftProspect: true,
         draftYear: year,
         personality: 'Ambicioso',
-        developmentType: 'early_bloomer',
+        developmentType: yRatings.developmentType,
         attributes: {
           pace: Math.min(92, ovr + 8 + Math.floor(Math.random() * 8)),
           shooting: pos === 'DEL' ? ovr + 6 : ovr - 6,

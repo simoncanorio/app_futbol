@@ -60,6 +60,32 @@ export function History() {
 
   if (!team || !clubHistory) return <div style={{ padding: '2rem' }}>Cargando historia del club...</div>;
 
+  const wonSaveChampionsYears = history.filter(h => h.championsLeagueChampionId === team.id).map(h => h.season);
+  const wonSaveLeagueYears = history.filter(h => h.championId === team.id).map(h => h.season);
+  const wonSaveCupYears = history.filter(h => h.cupChampionId === team.id).map(h => h.season);
+
+  const totalChampionsTitles = clubHistory.championsLeagueTitles + wonSaveChampionsYears.length;
+  const totalLeagueTitles = clubHistory.domesticLeagueTitles + wonSaveLeagueYears.length;
+
+  const allChampionsYears = [
+    ...(clubHistory.championsYears && clubHistory.championsYears.length > 0
+      ? clubHistory.championsYears
+      : Array.from({ length: clubHistory.championsLeagueTitles }).map((_, i) => 2000 + i * 4)),
+    ...wonSaveChampionsYears
+  ];
+  const allLeagueYears = [
+    ...(clubHistory.leagueYears && clubHistory.leagueYears.length > 0
+      ? clubHistory.leagueYears
+      : Array.from({ length: Math.min(12, clubHistory.domesticLeagueTitles) }).map((_, i) => 2000 + i * 2)),
+    ...wonSaveLeagueYears
+  ];
+  const allCupYears = [
+    ...(clubHistory.cupYears && clubHistory.cupYears.length > 0
+      ? clubHistory.cupYears.slice(0, 15)
+      : Array.from({ length: Math.min(8, clubHistory.domesticCupTitles) }).map((_, i) => 2000 + i * 3)),
+    ...wonSaveCupYears
+  ];
+
   return (
     <div className="page-container history-page">
       {/* Hero Header */}
@@ -79,7 +105,7 @@ export function History() {
             <Trophy size={20} color="#eab308" />
             <div>
               <span>Champions League</span>
-              <strong>{clubHistory.championsLeagueTitles} Títulos</strong>
+              <strong>{totalChampionsTitles} Títulos</strong>
             </div>
           </div>
 
@@ -87,7 +113,7 @@ export function History() {
             <Award size={20} color="#38bdf8" />
             <div>
               <span>Ligas Domésticas</span>
-              <strong>{clubHistory.domesticLeagueTitles} Títulos</strong>
+              <strong>{totalLeagueTitles} Títulos</strong>
             </div>
           </div>
         </div>
@@ -95,12 +121,9 @@ export function History() {
 
       {/* Trophy Cabinet Row */}
       <div className="glass-panel trophy-cabinet-section">
-        <h3><Trophy size={20} color="#eab308" /> Vitrina de Trofeos Oficial</h3>
+        <h3><Trophy size={20} color="#eab308" /> Vitrina de Trofeos Oficial (Históricos + Ganados en Partida)</h3>
         <div className="trophies-grid">
-          {(clubHistory.championsYears && clubHistory.championsYears.length > 0
-            ? clubHistory.championsYears
-            : Array.from({ length: clubHistory.championsLeagueTitles }).map((_, i) => 2000 + i * 4)
-          ).map((yr, i) => (
+          {allChampionsYears.map((yr, i) => (
             <div key={`ucl-${i}`} className="trophy-item gold" title={`Champions League ${yr}`}>
               <Trophy size={28} />
               <span style={{ fontWeight: 'bold' }}>Champions</span>
@@ -108,22 +131,16 @@ export function History() {
             </div>
           ))}
 
-          {(clubHistory.leagueYears && clubHistory.leagueYears.length > 0
-            ? clubHistory.leagueYears
-            : Array.from({ length: Math.min(12, clubHistory.domesticLeagueTitles) }).map((_, i) => 2000 + i * 2)
-          ).map((yr, i) => (
+          {allLeagueYears.map((yr, i) => (
             <div key={`league-${i}`} className="trophy-item blue" title={`Liga Doméstica ${yr}`}>
               <Award size={24} />
-              <span style={{ fontWeight: 'bold' }}>LaLiga</span>
+              <span style={{ fontWeight: 'bold' }}>{team.domesticLeague || 'Liga'}</span>
               <small style={{ color: '#38bdf8', fontWeight: 'bold' }}>{yr}</small>
             </div>
           ))}
 
-          {(clubHistory.cupYears && clubHistory.cupYears.length > 0
-            ? clubHistory.cupYears.slice(0, 15)
-            : Array.from({ length: Math.min(8, clubHistory.domesticCupTitles) }).map((_, i) => 2000 + i * 3)
-          ).map((yr, i) => (
-            <div key={`cup-${i}`} className="trophy-item green" title={`Copa del Rey / FA Cup ${yr}`}>
+          {allCupYears.map((yr, i) => (
+            <div key={`cup-${i}`} className="trophy-item green" title={`Copa Nacional ${yr}`}>
               <Landmark size={24} />
               <span style={{ fontWeight: 'bold' }}>Copa Nacional</span>
               <small style={{ color: '#10b981', fontWeight: 'bold' }}>{yr}</small>
@@ -173,13 +190,21 @@ export function History() {
             <h3>Récord de Temporadas Recientes</h3>
             <div className="seasons-history-list">
               <div>
-                <strong>2026 (Actual):</strong> {team.wins} Ganados - {team.draws} Empatados - {team.losses} Perdidos
+                <strong>{league?.season || 2026} (Actual):</strong> {team.wins} Ganados - {team.draws} Empatados - {team.losses} Perdidos
               </div>
-              {history.map(h => (
-                <div key={h.id}>
-                  <strong>Temporada {h.season}:</strong> {h.championId === team.id ? '🏆 Campeón' : 'Participante'}
-                </div>
-              ))}
+              {history.map(h => {
+                const badges = [];
+                if (h.championId === team.id) badges.push(`🏆 Campeón ${team.domesticLeague}`);
+                if (h.championsLeagueChampionId === team.id) badges.push('🏆 Campeón Champions League');
+                if (h.europaLeagueChampionId === team.id) badges.push('🏆 Campeón Europa League');
+                if (h.cupChampionId === team.id) badges.push('🏆 Campeón Copa Nacional');
+                return (
+                  <div key={h.id}>
+                    <strong>Temporada {h.season}:</strong>{' '}
+                    {badges.length > 0 ? <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{badges.join(' • ')}</span> : 'Temporada Completada'}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

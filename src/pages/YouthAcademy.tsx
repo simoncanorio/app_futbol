@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, type Player, type Team, type League, formatMoney, getInitialPlayerStats, getDetailedAttributes } from '../db/db';
+import { getClubInfrastructureProfile, generateRealisticYouthProspectRatings } from '../db/generators';
 import { CustomModal } from '../components/common/CustomModal';
-import { Sparkles, Dumbbell, Shield, Target, Activity, HeartPulse, Search, UserPlus, ArrowUpRight, Award } from 'lucide-react';
+import { Sparkles, Dumbbell, Shield, Target, Activity, HeartPulse, Search, UserPlus, ArrowUpRight, Award, DollarSign } from 'lucide-react';
 
 interface TrainingRegimeOption {
   id: 'balance' | 'attacking' | 'defending' | 'physical' | 'technical' | 'recovery';
@@ -77,6 +78,7 @@ export function YouthAcademy() {
   const [mentoringProspect, setMentoringProspect] = useState<Player | null>(null);
   const [promotingPlayer, setPromotingPlayer] = useState<Player | null>(null);
   const [isScouting, setIsScouting] = useState(false);
+  const [youthInvestment, setYouthInvestment] = useState<number>(60);
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const loadData = async () => {
@@ -87,7 +89,15 @@ export function YouthAcademy() {
     setLeague(l);
 
     const userTeam = await db.teams.get(l.userTeamId);
-    if (userTeam) setTeam(userTeam);
+    if (userTeam) {
+      const defaultInfra = getClubInfrastructureProfile(userTeam.name, userTeam.prestige || 75);
+      if (userTeam.youthExpense === undefined) {
+        userTeam.youthExpense = defaultInfra.youthExpense;
+        await db.teams.put(userTeam);
+      }
+      setTeam(userTeam);
+      setYouthInvestment(userTeam.youthExpense ?? defaultInfra.youthExpense);
+    }
 
     const p = await db.players.where('teamId').equals(l.userTeamId).toArray();
     const youth = p.filter(player => player.lineupStatus === 'youth');
@@ -95,6 +105,19 @@ export function YouthAcademy() {
 
     const vets = p.filter(pl => pl.lineupStatus !== 'youth' && pl.age >= 27 && pl.overall >= 74);
     setVeterans(vets);
+  };
+
+  const handleSaveYouthInvestment = async (newLevel: number) => {
+    setYouthInvestment(newLevel);
+    if (!team) return;
+    team.youthExpense = newLevel;
+    await db.teams.put(team);
+    setTeam({ ...team });
+    setStatusMsg({
+      text: `¡Presupuesto de Inversión en el Filial ajustado a ${newLevel}/100! Esto determina la calidad de los nuevos canteranos y su velocidad de formación.`,
+      type: 'success'
+    });
+    setTimeout(() => setStatusMsg(null), 4000);
   };
 
   const handleAssignMentor = async (prospect: Player, mentorId: number | null) => {
@@ -167,8 +190,9 @@ export function YouthAcademy() {
       const spec = specList[Math.floor(Math.random() * specList.length)];
       const country = COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)];
       const name = `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
-      const overall = 58 + Math.floor(Math.random() * 14); // 58-71
-      const potential = Math.min(96, overall + 14 + Math.floor(Math.random() * 16)); // 72-96
+      const yRatings = generateRealisticYouthProspectRatings(youthInvestment);
+      const overall = yRatings.overall;
+      const potential = yRatings.potential;
 
       const candidatePlayer: Player = {
         leagueId: league.id!,
@@ -185,7 +209,7 @@ export function YouthAcademy() {
         lineupStatus: 'youth',
         recruitedYear: league.season,
         personality: 'Ambicioso',
-        developmentType: 'early_bloomer',
+        developmentType: yRatings.developmentType,
         stats: getInitialPlayerStats(),
         bio: {
           country,
@@ -310,6 +334,60 @@ export function YouthAcademy() {
           {statusMsg.type === 'success' ? '✅' : '⚠️'} {statusMsg.text}
         </div>
       )}
+
+      {/* Youth Academy Investment Level Control Panel */}
+      <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', marginBottom: '2rem', border: '1px solid rgba(16, 185, 129, 0.25)', background: 'rgba(15, 23, 42, 0.85)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '0.8rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.15rem', color: '#10b981', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <DollarSign size={20} color="#10b981" /> Nivel de Inversión en el Filial & Captación ({youthInvestment}/100)
+            </h2>
+            <p style={{ fontSize: '0.83rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
+              Define cuánto presupuesto destina {team?.name || 'el club'} a su academia juvenil. La mayoría de canteranos tendrán potencial realista de rotación (72-80), y solo una inversión alta permite descubrir joyas generacionales (88+).
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Coste Operativo Anual del Filial:</span>
+            <strong style={{ color: '#fbbf24', fontSize: '1rem' }}>{formatMoney(Math.round(youthInvestment * 140000))}/año</strong>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="range"
+            min={10}
+            max={100}
+            value={youthInvestment}
+            onChange={e => handleSaveYouthInvestment(Number(e.target.value))}
+            style={{ flex: 1, minWidth: '220px', accentColor: '#10b981' }}
+          />
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {[
+              { val: 25, label: 'Bajo (25)' },
+              { val: 55, label: 'Estándar (55)' },
+              { val: 80, label: 'Alto (80)' },
+              { val: 98, label: '🌟 Modelo La Masia (98)' }
+            ].map(pr => (
+              <button
+                key={pr.val}
+                onClick={() => handleSaveYouthInvestment(pr.val)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.76rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  border: youthInvestment === pr.val ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                  background: youthInvestment === pr.val ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.04)',
+                  color: youthInvestment === pr.val ? '#10b981' : '#cbd5e1'
+                }}
+              >
+                {pr.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Training Regimes Section */}
       <div style={{ marginBottom: '2.5rem' }}>
@@ -464,11 +542,11 @@ export function YouthAcademy() {
                         fontSize: '0.75rem',
                         fontWeight: 'bold',
                         backgroundColor: p.position === 'DEL' ? 'rgba(239, 68, 68, 0.2)' :
-                                         p.position === 'MED' ? 'rgba(16, 185, 129, 0.2)' :
-                                         p.position === 'DEF' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                          p.position === 'MED' ? 'rgba(16, 185, 129, 0.2)' :
+                            p.position === 'DEF' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(234, 179, 8, 0.2)',
                         color: p.position === 'DEL' ? '#f87171' :
-                               p.position === 'MED' ? '#34d399' :
-                               p.position === 'DEF' ? '#60a5fa' : '#fde047'
+                          p.position === 'MED' ? '#34d399' :
+                            p.position === 'DEF' ? '#60a5fa' : '#fde047'
                       }}>
                         {p.specificPosition || p.position}
                       </span>
@@ -677,11 +755,11 @@ export function YouthAcademy() {
                           fontSize: '0.75rem',
                           fontWeight: 'bold',
                           backgroundColor: candidate.position === 'DEL' ? 'rgba(239, 68, 68, 0.25)' :
-                                           candidate.position === 'MED' ? 'rgba(16, 185, 129, 0.25)' :
-                                           candidate.position === 'DEF' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(234, 179, 8, 0.25)',
+                            candidate.position === 'MED' ? 'rgba(16, 185, 129, 0.25)' :
+                              candidate.position === 'DEF' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(234, 179, 8, 0.25)',
                           color: candidate.position === 'DEL' ? '#f87171' :
-                                 candidate.position === 'MED' ? '#34d399' :
-                                 candidate.position === 'DEF' ? '#60a5fa' : '#fde047'
+                            candidate.position === 'MED' ? '#34d399' :
+                              candidate.position === 'DEF' ? '#60a5fa' : '#fde047'
                         }}>
                           {candidate.specificPosition || candidate.position}
                         </span>

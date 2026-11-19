@@ -41,7 +41,7 @@ export function FreeAgents() {
       }
       
       const allPlayers = await db.players.where('leagueId').equals(lid).toArray();
-      const fa = allPlayers.filter(p => !p.teamId && !p.isDraftProspect && !p.isScouted).sort((a, b) => b.overall - a.overall);
+      const fa = allPlayers.filter(p => !p.teamId && !p.isRetired && !p.isDraftProspect && !p.isScouted).sort((a, b) => b.overall - a.overall);
       setFreeAgents(fa);
     }
     load();

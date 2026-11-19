@@ -353,27 +353,68 @@ export async function simulateMatch(
   let currentZone: Zone = 'mid_center';
   let isCounterAttack = false;
 
-  const trySubstitution = (isHomeSide: boolean, minute: number, forcedTarget?: ActiveSlotPlayer) => {
+  const trySubstitution = (
+    isHomeSide: boolean,
+    minute: number,
+    forcedTarget?: ActiveSlotPlayer,
+    forcedBenchPlayer?: Player
+  ) => {
     const subsUsed = isHomeSide ? homeSubsUsed : awaySubsUsed;
     if (subsUsed >= 5) return;
     const sheet = isHomeSide ? homeSheet : awaySheet;
     const participants = isHomeSide ? homeParticipants : awayParticipants;
     const teamId = isHomeSide ? homeTeam.id! : awayTeam.id!;
 
-    const activeField = sheet.onPitch.filter(ap => !ap.sentOff && ap.subbedOutMinute === null && ap.slotType !== 'POR');
-    const target = forcedTarget || activeField
-      .filter(ap => ap.inMatchFatigue > 62 || ap.inMatchYellows >= 1)
-      .sort((a, b) => (b.inMatchFatigue + b.inMatchYellows * 18) - (a.inMatchFatigue + a.inMatchYellows * 18))[0];
+    const activeField = sheet.onPitch.filter(
+      ap => !ap.sentOff && ap.subbedOutMinute === null && ap.slotType !== 'POR'
+    );
+    if (activeField.length === 0 || sheet.bench.length === 0) return;
 
-    if (!target || sheet.bench.length === 0) return;
+    let subInPlayer: Player | undefined = forcedBenchPlayer;
+    let target: ActiveSlotPlayer | undefined = forcedTarget;
 
-    // Pick best matching bench player
-    const subIdx = sheet.bench.findIndex(b => b.position === target.slotType);
-    const chosenBenchIdx = subIdx >= 0 ? subIdx : 0;
-    const subInPlayer = sheet.bench[chosenBenchIdx];
-    if (!subInPlayer || subInPlayer.position === 'POR') return;
+    if (subInPlayer) {
+      // Planned substitution: pick the best matching starter on pitch (who wasn't just subbed in)
+      const eligibleTargets = activeField.filter(ap => ap.subbedInMinute === null);
+      const targetPool = eligibleTargets.length > 0 ? eligibleTargets : activeField;
+      const subSpec = getSpecificPosition(subInPlayer);
+      target =
+        target ||
+        [...targetPool].sort((a, b) => {
+          const penA = getPositionalPenalty(subInPlayer!.position, a.slotType, a.slotLabel, subSpec, subInPlayer!.secondaryPositions);
+          const penB = getPositionalPenalty(subInPlayer!.position, b.slotType, b.slotLabel, subSpec, subInPlayer!.secondaryPositions);
+          if (penA !== penB) return penA - penB;
+          return (b.inMatchFatigue + b.inMatchYellows * 18) - (a.inMatchFatigue + a.inMatchYellows * 18);
+        })[0];
+    } else {
+      target =
+        target ||
+        activeField
+          .filter(ap => ap.inMatchFatigue > 62 || ap.inMatchYellows >= 1)
+          .sort((a, b) => (b.inMatchFatigue + b.inMatchYellows * 18) - (a.inMatchFatigue + a.inMatchYellows * 18))[0];
 
-    sheet.bench.splice(chosenBenchIdx, 1);
+      if (!target) return;
+
+      // Only pick bench players set to Auto (0 or undefined), skipping those with -1 (Do not sub) or >0 (Scheduled minute)
+      const autoEligibleBench = sheet.bench.filter(
+        b => b.position !== 'POR' && (!b.plannedSubMinutes || b.plannedSubMinutes === 0)
+      );
+      if (autoEligibleBench.length === 0) return;
+
+      subInPlayer =
+        autoEligibleBench.find(b => b.position === target!.slotType) ||
+        autoEligibleBench.sort((a, b) => {
+          const penA = getPositionalPenalty(a.position, target!.slotType, target!.slotLabel, getSpecificPosition(a), a.secondaryPositions);
+          const penB = getPositionalPenalty(b.position, target!.slotType, target!.slotLabel, getSpecificPosition(b), b.secondaryPositions);
+          return penA - penB || b.overall - a.overall;
+        })[0];
+    }
+
+    if (!target || !subInPlayer || subInPlayer.position === 'POR') return;
+    const benchIdx = sheet.bench.findIndex(b => b.id === subInPlayer!.id);
+    if (benchIdx < 0) return;
+
+    sheet.bench.splice(benchIdx, 1);
     target.subbedOutMinute = minute;
 
     const spec = getSpecificPosition(subInPlayer);
@@ -404,6 +445,7 @@ export async function simulateMatch(
     if (isHomeSide) homeSubsUsed++;
     else awaySubsUsed++;
 
+    const isPlanned = forcedBenchPlayer && forcedBenchPlayer.plannedSubMinutes && forcedBenchPlayer.plannedSubMinutes > 0;
     events.push({
       type: 'substitution',
       playerId: subInPlayer.id!,
@@ -412,12 +454,29 @@ export async function simulateMatch(
       subOutName: target.player.name,
       teamId,
       minute,
-      description: `🔄 Cambio: Entra ${subInPlayer.name} por ${target.player.name}`
+      description: isPlanned
+        ? `🔄 Cambio Programado (${forcedBenchPlayer!.plannedSubMinutes} min): Entra ${subInPlayer.name} por ${target.player.name}`
+        : `🔄 Cambio: Entra ${subInPlayer.name} por ${target.player.name}`
     });
   };
 
   const simulateMinuteStep = (minute: number) => {
-    // Check tactical substitution windows
+    // 1. Check user/team scheduled substitutions (plannedSubMinutes > 0 -> enters at 90 - plannedSubMinutes)
+    const homePlanned = homeSheet.bench.filter(
+      b => b.plannedSubMinutes && b.plannedSubMinutes > 0 && Math.max(1, 90 - b.plannedSubMinutes) === minute
+    );
+    for (const bp of homePlanned) {
+      trySubstitution(true, minute, undefined, bp);
+    }
+
+    const awayPlanned = awaySheet.bench.filter(
+      b => b.plannedSubMinutes && b.plannedSubMinutes > 0 && Math.max(1, 90 - b.plannedSubMinutes) === minute
+    );
+    for (const bp of awayPlanned) {
+      trySubstitution(false, minute, undefined, bp);
+    }
+
+    // 2. Check automatic AI tactical substitution windows
     if ([60, 68, 76, 83].includes(minute)) {
       if (Math.random() < 0.75) trySubstitution(true, minute);
       if (Math.random() < 0.75) trySubstitution(false, minute);
